@@ -43,7 +43,7 @@ def fetch_kline(code, start="20210101", end="20500101"):
         "fields1": "f1,f2,f3,f4,f5,f6",
         "fields2": "f51,f53,f57,f59,f61",
         "klt": "101",          # 日线
-        "fqt": "1",            # 前复权
+        "fqt": "0",            # 不复权：需与单位净值直接比较计算折溢价
         "beg": start,
         "end": end,
         "lmt": "10000",

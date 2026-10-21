@@ -56,22 +56,28 @@
   .empty{padding:60px 0;text-align:center;color:var(--muted)}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:26px;line-height:1.8}
   @media(max-width:640px){
-    .wrap{padding:14px 12px 40px}
-    h1{font-size:19px}
-    .sub{font-size:12px}
+    .wrap{padding:14px 10px 40px}
+    h1{font-size:18px}
+    .sub{font-size:11.5px;line-height:1.6}
     .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-    .card{padding:12px 12px;border-radius:12px}
+    .card{padding:12px;border-radius:12px}
     .card .label{font-size:11.5px;line-height:1.4}
     .card .value{font-size:19px;margin:6px 0 2px}
     .card .row{font-size:11.5px}
-    .panel{padding:12px 12px 6px;border-radius:12px}
-    .ctrl{gap:8px}
-    button,a.btn{padding:6px 10px;font-size:12px;border-radius:8px}
-    .chart{height:300px}
-    .chart.sm{height:260px}
+    .panel{padding:12px 10px 4px;border-radius:12px}
+    .panel h2{font-size:13.5px;margin-bottom:8px;line-height:1.4}
+    .panel h2 span{display:none}
+    .ctrl{gap:6px;margin-bottom:8px}
+    .ctrl .tag{font-size:11px}
+    button,a.btn{padding:6px 9px;font-size:12px;border-radius:8px}
+    .chart{height:330px}
+    .chart.sm{height:300px}
     .scroll{max-height:340px}
+    table{min-width:max-content}
     th,td{padding:6px 7px;font-size:12px}
-    header.top{margin-bottom:14px}
+    header.top{margin-bottom:12px}
+    .tools{gap:6px}
+    footer{font-size:11px}
   }
 </style>
 </head>
@@ -199,29 +205,48 @@
     return charts[id];
   }
   const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
+  const mq = window.matchMedia("(max-width: 640px)");
+  let isMobile = mq.matches;
+  const SHORT = n => String(n).split(" ")[0];
   function baseOption(extraAxis) {
     const dark = isDark();
+    const labelColor = dark ? "#93a0b8" : "#6b7488";
     const opt = {
       backgroundColor: "transparent",
       textStyle: {color: dark ? "#e8ecf5" : "#1b2130"},
-      grid: {left: 62, right: extraAxis ? 62 : 24, top: 46, bottom: 62},
-      tooltip: {trigger: "axis", axisPointer: {type: "cross"},
+      grid: {
+        left: isMobile ? 44 : 62,
+        right: extraAxis ? (isMobile ? 42 : 62) : (isMobile ? 12 : 24),
+        top: isMobile ? 58 : 46,
+        bottom: isMobile ? 30 : 62
+      },
+      tooltip: {trigger: "axis", axisPointer: {type: "cross"}, confine: true,
         backgroundColor: dark ? "#1b2333" : "#fff",
         borderColor: dark ? "#2c3853" : "#e6e9f2",
-        textStyle: {color: dark ? "#e8ecf5" : "#1b2130"}},
-      legend: {top: 6, textStyle: {color: dark ? "#93a0b8" : "#6b7488"}, itemGap: 12},
+        textStyle: {color: dark ? "#e8ecf5" : "#1b2130", fontSize: isMobile ? 11 : 12}},
+      legend: {
+        type: "scroll", top: 4, left: 0, right: 0, itemWidth: isMobile ? 12 : 16,
+        itemHeight: isMobile ? 8 : 10, itemGap: isMobile ? 8 : 12, padding: 0,
+        textStyle: {color: labelColor, fontSize: isMobile ? 10 : 12},
+        formatter: isMobile ? SHORT : undefined
+      },
       xAxis: {type: "category", boundaryGap: false,
         axisLine: {lineStyle: {color: dark ? "#2c3853" : "#dfe3ee"}},
-        axisLabel: {color: dark ? "#93a0b8" : "#6b7488"}},
-      yAxis: [{type: "value", scale: true, splitLine: {lineStyle: {color: dark ? "#222c42" : "#eef1f7"}},
-        axisLabel: {color: dark ? "#93a0b8" : "#6b7488"}}],
-      dataZoom: [{type: "inside"}, {type: "slider", height: 18, bottom: 14,
-        borderColor: "transparent", backgroundColor: dark ? "#1b2333" : "#f1f4fa",
-        textStyle: {color: dark ? "#93a0b8" : "#6b7488"}}]
+        axisLabel: {color: labelColor, fontSize: isMobile ? 9.5 : 12, hideOverlap: true}},
+      yAxis: [{type: "value", scale: true, nameTextStyle: {fontSize: isMobile ? 9.5 : 12, color: labelColor},
+        nameGap: isMobile ? 8 : 12,
+        splitLine: {lineStyle: {color: dark ? "#222c42" : "#eef1f7"}},
+        axisLabel: {color: labelColor, fontSize: isMobile ? 9.5 : 12}}],
+      dataZoom: isMobile ? [{type: "inside"}] : [{type: "inside"},
+        {type: "slider", height: 18, bottom: 14,
+         borderColor: "transparent", backgroundColor: dark ? "#1b2333" : "#f1f4fa",
+         textStyle: {color: labelColor}}]
     };
     if (extraAxis) {
       opt.yAxis.push({type: "value", scale: true, splitLine: {show: false},
-        axisLabel: {color: dark ? "#93a0b8" : "#6b7488"}});
+        nameTextStyle: {fontSize: isMobile ? 9.5 : 12, color: labelColor},
+        nameGap: isMobile ? 8 : 12,
+        axisLabel: {color: labelColor, fontSize: isMobile ? 9.5 : 12}});
     }
     return opt;
   }
@@ -232,7 +257,12 @@
     return {start, dates: dates.slice(start), idx: dates.slice(start).map((_, i) => start + i)};
   }
   const at = (code, i) => D.series[code][i];
-  const navAt = (code, i) => (D.market && D.market[code] ? D.market[code].nav[i] : null);
+  // 资金流用前向填充净值；折溢价只认当日原始净值，避免错配
+  const navAt = (code, i) => {
+    const m = D.market && D.market[code];
+    return m ? (m.navFill ? m.navFill[i] : m.nav[i]) : null;
+  };
+  const navRawAt = (code, i) => (D.market && D.market[code] ? D.market[code].nav[i] : null);
   const closeAt = (code, i) => (D.market && D.market[code] ? D.market[code].close[i] : null);
   const amtAt = (code, i) => (D.market && D.market[code] ? D.market[code].amount[i] : null);
 
@@ -288,8 +318,10 @@
   }
   function premiumOf(code, s) {
     return s.idx.map(i => {
-      const c = closeAt(code, i), n = navAt(code, i);
-      return (c != null && n) ? +((c / n - 1) * 100).toFixed(3) : null;
+      const c = closeAt(code, i), n = navRawAt(code, i);
+      if (c == null || !n) return null;
+      const p = (c / n - 1) * 100;
+      return Math.abs(p) > 3 ? null : +p.toFixed(3);   // 剔除除权/净值错配日
     });
   }
   function sumFlow(s, codes) {
@@ -363,7 +395,7 @@
     const s = slice();
     const opt = baseOption(false);
     opt.xAxis.data = s.dates;
-    opt.yAxis[0].name = state.metric === "norm" ? "指数" : "亿份";
+    opt.yAxis[0].name = isMobile ? "" : (state.metric === "norm" ? "指数" : "亿份");
     opt.series = [];
     if (state.codes.length > 1) {
       const tot = s.idx.map(i => { const v = sumAt(i, state.codes); return v == null ? null : yi(v); });
@@ -386,7 +418,7 @@
     const s = slice();
     const opt = baseOption(false);
     opt.xAxis.data = s.dates;
-    opt.yAxis[0].name = "亿份";
+    opt.yAxis[0].name = isMobile ? "" : "亿份";
     opt.series = [];
     if (state.codes.length > 1) {
       const tot = s.idx.map(i => { const v = sumAt(i, state.codes); return v == null ? null : +(yi(v)).toFixed(4); });
@@ -407,12 +439,12 @@
     const s = slice();
     const opt = baseOption(true);
     opt.xAxis.data = s.dates;
-    opt.yAxis[0].name = "净流入(亿元)";
-    opt.yAxis[1].name = "成交额(亿元)";
+    opt.yAxis[0].name = isMobile ? "" : "净流入(亿元)";
+    opt.yAxis[1].name = isMobile ? "" : "成交额(亿元)";
     opt.series = [
-      {name: "净流入金额", type: "bar", yAxisIndex: 0, data: sumFlow(s, state.codes),
+      {name: "净流入", type: "bar", yAxisIndex: 0, data: sumFlow(s, state.codes),
         itemStyle: {color: p => p.value >= 0 ? "#d92b3a" : "#1a9d5c"}},
-      {name: "成交额(右轴)", type: "line", yAxisIndex: 1, smooth: true, symbol: "none",
+      {name: "成交额", type: "line", yAxisIndex: 1, smooth: true, symbol: "none",
         lineStyle: {width: 1.6, color: "#8e44ad"}, itemStyle: {color: "#8e44ad"},
         data: sumAmount(s, state.codes)}
     ];
@@ -424,12 +456,19 @@
     const s = slice();
     const opt = baseOption(false);
     opt.xAxis.data = s.dates;
-    opt.yAxis[0].name = "%";
+    opt.yAxis[0].name = isMobile ? "" : "%";
     opt.series = state.codes.map(c => ({
       name: c + " " + byCode[c].name, type: "line", smooth: true, symbol: "none",
-      lineStyle: {width: 1.6, color: byCode[c].color}, itemStyle: {color: byCode[c].color},
+      lineStyle: {width: 1.5, color: byCode[c].color}, itemStyle: {color: byCode[c].color},
       data: premiumOf(c, s)
     }));
+    if (opt.series.length) {
+      opt.series[0].markLine = {
+        symbol: "none", silent: true, label: {show: false},
+        lineStyle: {color: isDark() ? "#4a5878" : "#c9d0e2", type: "dashed", width: 1},
+        data: [{yAxis: 0}]
+      };
+    }
     opt.tooltip.valueFormatter = v => v == null ? "-" : Number(v).toFixed(3) + "%";
     chart("chart-premium").setOption(opt, true);
   }
@@ -452,8 +491,8 @@
     const opt = {
       backgroundColor: "transparent",
       textStyle: {color: isDark() ? "#e8ecf5" : "#1b2130"},
-      grid: {left: 8, right: 40, top: 16, bottom: 12, containLabel: true},
-      tooltip: {trigger: "axis", axisPointer: {type: "shadow"},
+      grid: {left: 6, right: isMobile ? 46 : 52, top: 10, bottom: 8, containLabel: true},
+      tooltip: {trigger: "axis", axisPointer: {type: "shadow"}, confine: true,
         backgroundColor: isDark() ? "#1b2333" : "#fff",
         textStyle: {color: isDark() ? "#e8ecf5" : "#1b2130"},
         formatter: p => {
@@ -461,17 +500,17 @@
           return r.name + "<br/>净流入：" + fmt(r.flow) + " 亿元<br/>份额变化：" + sign(r.pct) + "%";
         }},
       xAxis: {type: "value", splitLine: {lineStyle: {color: isDark() ? "#222c42" : "#eef1f7"}},
-        axisLabel: {color: isDark() ? "#93a0b8" : "#6b7488"}},
+        axisLabel: {color: isDark() ? "#93a0b8" : "#6b7488", fontSize: isMobile ? 9.5 : 12}},
       yAxis: {type: "category", data: rows.map(r => r.code),
-        axisLabel: {color: isDark() ? "#93a0b8" : "#6b7488"},
+        axisLabel: {color: isDark() ? "#93a0b8" : "#6b7488", fontSize: isMobile ? 10 : 12},
         axisLine: {lineStyle: {color: isDark() ? "#2c3853" : "#dfe3ee"}}},
       series: [{
-        type: "bar", barMaxWidth: 18,
+        type: "bar", barMaxWidth: isMobile ? 14 : 18,
         data: rows.map(r => ({value: state.cmp === "flow" ? r.flow : r.pct,
           itemStyle: {color: r.color, opacity: state.codes.includes(r.code) ? 1 : .45}})),
-        label: {show: true, position: "right", fontSize: 11,
+        label: {show: true, position: "right", fontSize: isMobile ? 9.5 : 11,
           color: isDark() ? "#e8ecf5" : "#1b2130",
-          formatter: p => fmt(p.value, state.cmp === "flow" ? 1 : 1) + (state.cmp === "flow" ? "亿" : "%")}
+          formatter: p => fmt(p.value, 1) + (state.cmp === "flow" ? "亿" : "%")}
       }]
     };
     chart("chart-compare").setOption(opt, true);
@@ -616,7 +655,12 @@
     el("btn-theme").textContent = "浅色模式";
   }
   document.querySelectorAll('.range').forEach(b => b.classList.toggle("active", +b.dataset.n === state.range));
-  window.addEventListener("resize", () => Object.values(charts).forEach(c => c.resize()));
+  window.addEventListener("resize", () => {
+    Object.values(charts).forEach(c => c.resize());
+    const m = mq.matches;
+    if (m !== isMobile) { isMobile = m; renderAll(); }
+  });
+  if (mq.addEventListener) mq.addEventListener("change", e => { isMobile = e.matches; renderAll(); });
   syncChips();
   renderAll();
 })();

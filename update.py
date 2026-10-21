@@ -203,17 +203,19 @@ def build_web_data(rows, mrows):
         raw_name = next((r["name"] for r in rows if r["code"] == code and r["name"]), "")
         meta_funds.append({"code": code, "name": display, "rawName": raw_name,
                            "exchange": ex, "group": group})
-        # 行情与净值（净值缺失时向前取最近一次）
-        navs, closes, amounts = [], [], []
+        # 行情与净值；nav 为当日原始净值（缺失留空，用于折溢价），navFill 前向填充（用于资金流估算）
+        navs, nav_fill, closes, amounts = [], [], [], []
         last_nav = None
         for d in dates:
             m = mrows.get((d, code))
-            if m and m["nav"]:
-                last_nav = m["nav"]
-            navs.append(last_nav)
+            raw_nav = m["nav"] if (m and m["nav"]) else None
+            if raw_nav:
+                last_nav = raw_nav
+            navs.append(raw_nav)
+            nav_fill.append(last_nav)
             closes.append(m["close"] if m else None)
             amounts.append(round(m["amount"] / 1e8, 4) if m else None)  # 亿元
-        market_series[code] = {"nav": navs, "close": closes, "amount": amounts}
+        market_series[code] = {"nav": navs, "navFill": nav_fill, "close": closes, "amount": amounts}
     totals = []
     for i, d in enumerate(dates):
         vals = [series[c][i] for c in FUNDS if series[c][i] is not None]
