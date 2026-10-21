@@ -252,17 +252,51 @@ def build_macro_payload(dates, macro_rows, mrows, div_current):
         score = 100 * (0.45 * lev + 0.35 * (1 - val) + 0.20 * vl)
         emotion.append(round(score, 1))
 
+    # ---- 恐惧贪婪指数（自建 A 股版，参考 CNN 七因子框架）----
+    # 动量25% + 价格强度15% + 波动率(反向)20% + 成交额热度15% + 两融杠杆15% + 股债利差(反向)10%
+    amounts = [mrows.get((d, "510300"), {}).get("amount") for d in dates]
+    momentum, strength, amt_heat = [], [], []
+    for i in range(len(dates)):
+        w125 = [c for c in closes[max(0, i - 124):i + 1] if c]
+        momentum.append(round((closes[i] / (sum(w125) / len(w125)) - 1) * 100, 3)
+                        if (closes[i] and len(w125) >= 60) else None)
+        w250 = [c for c in closes[max(0, i - 249):i + 1] if c]
+        if closes[i] and len(w250) >= 60:
+            hi, lo = max(w250), min(w250)
+            strength.append(round((closes[i] - lo) / (hi - lo) * 100, 2) if hi > lo else 50.0)
+        else:
+            strength.append(None)
+        a5 = [x for x in amounts[max(0, i - 4):i + 1] if x]
+        a60 = [x for x in amounts[max(0, i - 59):i + 1] if x]
+        amt_heat.append(round((sum(a5) / len(a5)) / (sum(a60) / len(a60)), 4)
+                        if (len(a5) >= 3 and len(a60) >= 20 and sum(a60) > 0) else None)
+
+    FNG_PARTS = [(momentum, .25, False), (strength, .15, False), (vol, .20, True),
+                 (amt_heat, .15, False), (ratio, .15, False), (div_spread, .10, True)]
+    fng = []
+    for i in range(len(dates)):
+        total, used = 0.0, 0.0
+        for arr, w, inv in FNG_PARTS:
+            p = pct_rank(arr, i)
+            if p is None:
+                continue
+            total += w * ((1 - p) if inv else p)
+            used += w
+        fng.append(round(100 * total / used, 1) if used >= 0.5 else None)
+
     payload = {
         "meta": {"updatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                  "latest": dates[-1] if dates else "",
                  "divCurrent": div_current,
-                 "note": "股息率为按 PE 反推的近似值；情绪温度=两融占比分位45%+估值分位35%+波动率分位20%"},
+                 "note": "股息率为按 PE 反推的近似值；情绪温度=两融占比分位45%+估值分位35%+波动率分位20%；"
+                        "恐惧贪婪=动量25%+价格强度15%+波动率(反向)20%+成交额热度15%+两融杠杆15%+股债利差(反向)10%"},
         "dates": dates,
         "margin": {"balance": margin, "ratio": ratio, "fin": fin},
         "bond": {"y10": y10, "y2": y2, "spread": spread},
         "div": {"yield": div, "spread": div_spread},
         "vol": vol,
         "emotion": emotion,
+        "fng": fng,
     }
     with open(os.path.join(WEB_DATA, "macro.js"), "w", encoding="utf-8") as f:
         f.write("window.ETF_MACRO = " + json.dumps(payload, ensure_ascii=False) + ";\n")

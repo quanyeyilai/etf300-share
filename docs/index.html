@@ -204,6 +204,12 @@
   </section>
 
   <section class="panel">
+    <h2>恐惧贪婪指数 <span>0=极度恐惧，100=极度贪婪；动量25% + 价格强度15% + 波动率(反向)20% + 成交额热度15% + 两融杠杆15% + 股债利差(反向)10%，各因子按近1年分位合成</span></h2>
+    <div class="ctrl"><div class="group ranges" data-p="fng"></div></div>
+    <div id="chart-fng" class="chart"></div>
+  </section>
+
+  <section class="panel">
     <h2>明细数据 <span>最近交易日在上，跟随上方区间与基金选择</span></h2>
     <div class="ctrl">
       <div class="group ranges" data-p="table"></div>
@@ -247,7 +253,7 @@
   const state = {metric: "share", codes: G300.slice(), cmp: "flow", rows: 20,
     ranges: {cards: DEF_RANGE, macro: DEF_RANGE, main: DEF_RANGE, delta: DEF_RANGE,
              flow: DEF_RANGE, premium: DEF_RANGE, compare: DEF_RANGE, margin: DEF_RANGE,
-             div: DEF_RANGE, emotion: DEF_RANGE, table: DEF_RANGE}};
+             div: DEF_RANGE, emotion: DEF_RANGE, fng: DEF_RANGE, table: DEF_RANGE}};
 
   const el = id => document.getElementById(id);
   const fmt = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? "-" : Number(v).toFixed(d);
@@ -597,6 +603,8 @@
     const v = path.split(".").reduce((o, k) => (o == null ? null : o[k]), M);
     return v == null ? null : v[i];
   }
+  const fngLabel = v => v == null ? "" :
+    (v < 20 ? "极度恐惧" : v < 40 ? "恐惧" : v < 60 ? "中性" : v < 80 ? "贪婪" : "极度贪婪");
   function lastVal(arr, from) {
     for (let i = from; i >= 0; i--) if (arr[i] != null) return {v: arr[i], i};
     return null;
@@ -625,6 +633,9 @@
     const dBal = (bal && balPrev) ? bal.v - balPrev.v : null;
     const dBp = (y10 && y10Prev) ? (y10.v - y10Prev.v) * 100 : null;
     const dEm = (em && em20) ? em.v - em20.v : null;
+    const fg = M.fng ? lastVal(M.fng, last) : null;
+    const fgPrev = fg ? lastVal(M.fng, fg.i - 1) : null;
+    const dFg = (fg && fgPrev) ? fg.v - fgPrev.v : null;
 
     // 区间统计：所选区间首末值之差
     const s = slice("macro");
@@ -638,6 +649,7 @@
     const rY10 = rangeDelta(M.bond.y10);
     const rDiv = rangeDelta(M.div.yield);
     const rEm = rangeDelta(M.emotion);
+    const rFg = M.fng ? rangeDelta(M.fng) : null;
 
     el("macro-cards").innerHTML =
       card("两融余额", fmt(bal ? bal.v / 10000 : null, 2), "万亿", {
@@ -664,6 +676,12 @@
         items: [["近20日变化", dEm == null ? "-" : sign(dEm, 1), cls(dEm)],
                 ["区间变化(" + rn + ")", rEm == null ? "-" : sign(rEm, 1), cls(rEm)],
                 ["20日波动率", fmt(vol ? vol.v : null, 1) + "%", ""]]
+      }) +
+      card("恐惧贪婪指数", fmt(fg ? fg.v : null, 1), fngLabel(fg ? fg.v : null), {
+        color: "#f2994a",
+        items: [["日变化", dFg == null ? "-" : sign(dFg, 1), cls(dFg)],
+                ["区间变化(" + rn + ")", rFg == null ? "-" : sign(rFg, 1), cls(rFg)],
+                ["情绪温度", fmt(em ? em.v : null, 1), ""]]
       });
   }
 
@@ -735,6 +753,37 @@
     chart("chart-emotion").setOption(opt, true);
   }
 
+  function renderFng() {
+    if (!hasMacro || !M.fng) return;
+    const s = slice("fng");
+    const opt = baseOption(false);
+    const dark = isDark();
+    const labelColor = dark ? "#93a0b8" : "#6b7488";
+    opt.xAxis.data = s.dates;
+    opt.yAxis[0].name = isMobile ? "" : "指数";
+    opt.yAxis[0].min = 0;
+    opt.yAxis[0].max = 100;
+    const bands = [[0, 20, "rgba(26,157,92,.18)"], [20, 40, "rgba(26,157,92,.07)"],
+                   [40, 60, "rgba(147,160,184,.07)"], [60, 80, "rgba(217,43,58,.07)"],
+                   [80, 100, "rgba(217,43,58,.18)"]];
+    opt.series = [{
+      name: "恐惧贪婪指数", type: "line", smooth: true, symbol: "none",
+      lineStyle: {width: 2, color: "#f2994a"}, itemStyle: {color: "#f2994a"},
+      areaStyle: {color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        {offset: 0, color: dark ? "rgba(242,153,74,.32)" : "rgba(242,153,74,.20)"},
+        {offset: 1, color: "rgba(242,153,74,0)"}])},
+      markArea: {silent: true, data: bands.map(b => [{yAxis: b[0], itemStyle: {color: b[2]}}, {yAxis: b[1]}])},
+      markLine: {symbol: "none", silent: true,
+        lineStyle: {color: dark ? "#4a5878" : "#c9d0e2", type: "dashed", width: 1},
+        label: {show: !isMobile, position: "insideEndTop", color: labelColor, fontSize: 10},
+        data: [{yAxis: 20, label: {formatter: "恐惧"}}, {yAxis: 50, label: {formatter: "中性"}},
+               {yAxis: 80, label: {formatter: "贪婪"}}]},
+      data: s.idx.map(i => macroVal("fng", i))
+    }];
+    opt.tooltip.valueFormatter = v => v == null ? "-" : Number(v).toFixed(1);
+    chart("chart-fng").setOption(opt, true);
+  }
+
   function renderTable() {
     const n = (state.rows === undefined || state.rows === null) ? 20 : state.rows;   // 0 = 全部
     const s = slice("table");
@@ -769,11 +818,11 @@
 
   function renderAll() {
     renderCards(); renderMacroCards(); renderMain(); renderDelta(); renderFlow(); renderPremium();
-    renderCompare(); renderMargin(); renderDiv(); renderEmotion(); renderTable();
+    renderCompare(); renderMargin(); renderDiv(); renderEmotion(); renderFng(); renderTable();
   }
   function renderCharts() {
     renderMain(); renderDelta(); renderFlow(); renderPremium(); renderCompare();
-    renderMargin(); renderDiv(); renderEmotion();
+    renderMargin(); renderDiv(); renderEmotion(); renderFng();
   }
 
   el("m-latest").textContent = D.meta.latestDate;
@@ -804,6 +853,7 @@
     main: () => renderMain(), delta: () => renderDelta(), flow: () => renderFlow(),
     premium: () => renderPremium(), compare: () => renderCompare(),
     margin: () => renderMargin(), div: () => renderDiv(), emotion: () => renderEmotion(),
+    fng: () => renderFng(),
     table: () => renderTable()
   };
   function syncRanges() {
