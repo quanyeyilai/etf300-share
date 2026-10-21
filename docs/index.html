@@ -170,7 +170,7 @@
       <div id="chart-premium" class="chart sm"></div>
     </section>
     <section class="panel">
-      <h2>宽基横向对比 <span>区间累计资金动向</span></h2>
+      <h2>宽基横向对比 <span>跟随上方区间的累计资金动向</span></h2>
       <div class="ctrl">
         <div class="group">
           <button class="cmp active" data-c="flow">净流入金额（亿元）</button>
@@ -198,7 +198,7 @@
   </section>
 
   <section class="panel">
-    <h2>明细数据 <span>最近交易日在上，跟随上方基金选择</span></h2>
+    <h2>明细数据 <span>最近交易日在上，跟随上方区间与基金选择</span></h2>
     <div class="ctrl">
       <div class="group"><span class="tag">显示行数</span>
         <button class="rows active" data-n="20">20</button>
@@ -295,6 +295,9 @@
     return opt;
   }
 
+  const RANGE_NAME = {20: "1个月", 60: "3个月", 120: "6个月", 250: "1年", 750: "3年", 0: "全部"};
+  const rangeName = () => RANGE_NAME[state.range] || (state.range + " 日");
+
   function slice() {
     const n = state.range > 0 ? Math.min(state.range, dates.length) : dates.length;
     const start = dates.length - n;
@@ -387,6 +390,7 @@
   function renderCards() {
     const last = dates.length - 1;
     const codes = state.codes;
+    const s = slice();
     const build = (code) => {
       const isTotal = code === "__total__";
       const v = isTotal ? sumAt(last, codes) : at(code, last);
@@ -410,14 +414,24 @@
         return i < 0 ? null : sumAt(last, codes) - sumAt(i, codes);
       })() : d1raw;
       const flow = (d1 != null && nav) ? d1 * nav / 10000 : null;
-      const p5 = pick(5), p20 = pick(20);
-      const v5 = v != null && p5 != null ? v - p5 : null;
-      const v20 = v != null && p20 != null ? v - p20 : null;
+      // 区间统计：所选区间首末值之差 + 区间内累计净流入
+      const valAtI = i => (isTotal ? sumAt(i, codes) : at(code, i));
+      let firstI = null, lastI = null;
+      for (const i of s.idx) {
+        if (valAtI(i) != null) { if (firstI === null) firstI = i; lastI = i; }
+      }
+      const rng = (firstI !== null && lastI !== null && firstI !== lastI)
+        ? valAtI(lastI) - valAtI(firstI) : null;
+      const rngBase = rng !== null ? valAtI(firstI) : null;
+      const rngPct = (rng !== null && rngBase) ? rng / rngBase * 100 : null;
+      const rngFlowArr = isTotal ? sumFlow(s, codes) : flowOf(code, s);
+      let rngFlow = null;
+      for (const f of rngFlowArr) if (f != null) rngFlow = (rngFlow == null ? 0 : rngFlow) + f;
       return {
         code, name: isTotal ? (codes.length + " 只合计") : (code + " " + byCode[code].name),
         color: isTotal ? TOTAL_COLOR : byCode[code].color,
         value: yi(v), d1: yi(d1), pct: (d1 != null && v != null && (v - d1)) ? d1 / (v - d1) * 100 : null,
-        flow, d5: yi(v5), d20: yi(v20)
+        flow, dr: yi(rng), drPct: rngPct, rflow: rngFlow, rname: rangeName()
       };
     };
     let html = "";
@@ -430,8 +444,9 @@
       <div class="label"><span class="dot" style="background:${o.color}"></span>${o.name}</div>
       <div class="value">${fmt(o.value)}<small>亿份</small></div>
       <div class="row"><span>日变化</span><span class="${cls(o.d1)}">${o.d1 == null ? "-" : sign(o.d1) + "（" + sign(o.pct, 2) + "%）"}</span></div>
-      <div class="row"><span>净流入</span><span class="${cls(o.flow)}">${o.flow == null ? "-" : sign(o.flow) + " 亿"}</span></div>
-      <div class="row"><span>近 5 / 20 日</span><span class="${cls(o.d5)}">${o.d5 == null ? "-" : sign(o.d5)} / ${o.d20 == null ? "-" : sign(o.d20)}</span></div>
+      <div class="row"><span>日净流入</span><span class="${cls(o.flow)}">${o.flow == null ? "-" : sign(o.flow) + " 亿"}</span></div>
+      <div class="row"><span>区间变化(${o.rname})</span><span class="${cls(o.dr)}">${o.dr == null ? "-" : sign(o.dr) + "（" + sign(o.drPct, 2) + "%）"}</span></div>
+      <div class="row"><span>区间净流入</span><span class="${cls(o.rflow)}">${o.rflow == null ? "-" : sign(o.rflow) + " 亿"}</span></div>
     </div>`;
   }
 
@@ -597,26 +612,43 @@
     const dBp = (y10 && y10Prev) ? (y10.v - y10Prev.v) * 100 : null;
     const dEm = (em && em20) ? em.v - em20.v : null;
 
+    // 区间统计：所选区间首末值之差
+    const s = slice();
+    const rangeDelta = arr => {
+      let a = null, b = null;
+      for (const i of s.idx) { const v = arr[i]; if (v != null) { if (a === null) a = v; b = v; } }
+      return (a !== null && b !== null && a !== b) ? b - a : null;
+    };
+    const rn = rangeName();
+    const rBal = rangeDelta(M.margin.balance);
+    const rY10 = rangeDelta(M.bond.y10);
+    const rDiv = rangeDelta(M.div.yield);
+    const rEm = rangeDelta(M.emotion);
+
     el("macro-cards").innerHTML =
       card("两融余额", fmt(bal ? bal.v / 10000 : null, 2), "万亿", {
         color: "#3b5bdb",
         items: [["日变化", dBal == null ? "-" : sign(dBal / 10000) + " 万亿", cls(dBal)],
+                ["区间变化(" + rn + ")", rBal == null ? "-" : sign(rBal / 10000) + " 万亿", cls(rBal)],
                 ["占流通市值", fmt(ratio ? ratio.v : null, 2) + "%", ""]]
       }) +
       card("10年期国债", fmt(y10 ? y10.v : null, 3), "%", {
         color: "#f2994a",
         items: [["日变化", dBp == null ? "-" : sign(dBp, 1) + " bp", cls(-dBp)],
+                ["区间变化(" + rn + ")", rY10 == null ? "-" : sign(rY10 * 100, 1) + " bp", cls(-rY10)],
                 ["10Y−2Y 利差", fmt(lastVal(M.bond.spread, last).v, 2) + "%", ""]]
       }) +
       card("沪深300股息率", fmt(div ? div.v : null, 2), "%", {
         color: "#d92b3a",
-        items: [["股债利差", sp == null ? "-" : sign(sp.v) + "%", cls(sp ? sp.v : null)],
+        items: [["区间变化(" + rn + ")", rDiv == null ? "-" : sign(rDiv * 100, 1) + " bp", cls(rDiv)],
+                ["股债利差", sp == null ? "-" : sign(sp.v) + "%", cls(sp ? sp.v : null)],
                 ["PE / PB", fmt(M.meta.divCurrent ? M.meta.divCurrent.pe : null, 2) + " / " +
                   fmt(M.meta.divCurrent ? M.meta.divCurrent.pb : null, 2), ""]]
       }) +
       card("市场情绪", fmt(em ? em.v : null, 1), "/100", {
         color: "#7b61ff",
         items: [["近20日变化", dEm == null ? "-" : sign(dEm, 1), cls(dEm)],
+                ["区间变化(" + rn + ")", rEm == null ? "-" : sign(rEm, 1), cls(rEm)],
                 ["20日波动率", fmt(vol ? vol.v : null, 1) + "%", ""]]
       });
   }
@@ -691,7 +723,9 @@
 
   function renderTable() {
     const n = (state.rows === undefined || state.rows === null) ? 20 : state.rows;   // 0 = 全部
-    const idx = dates.map((_, i) => i).reverse().slice(0, n > 0 ? n : undefined);
+    const s = slice();
+    let idx = s.idx.slice().reverse();
+    if (n > 0) idx = idx.slice(0, n);
     let h = "<thead><tr><th>日期</th>";
     for (const c of state.codes) h += `<th>${c} 份额</th><th>日变化</th><th>净流入(亿)</th>`;
     h += "<th>合计份额</th><th>合计净流入(亿)</th><th>成交额(亿)</th></tr></thead><tbody>";
@@ -753,7 +787,7 @@
   document.querySelectorAll(".range").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".range").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
-    state.range = +b.dataset.n; renderCharts();
+    state.range = +b.dataset.n; renderAll();
   }));
   document.querySelectorAll(".metric").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".metric").forEach(x => x.classList.remove("active"));
@@ -798,7 +832,9 @@
       state.codes.map(c => c + "净流入(亿元)"),
       ["合计份额(亿份)", "合计净流入(亿元)", "成交额(亿元)"]);
     const lines = [head.join(",")];
-    dates.forEach((d, i) => {
+    const sCsv = slice();
+    sCsv.dates.forEach((d, k) => {
+      const i = sCsv.idx[k];
       const row = [d];
       let sum = 0, ok = false, sf = 0, okf = false;
       for (const c of state.codes) {
@@ -820,7 +856,7 @@
     const blob = new Blob(["\ufeff" + lines.join("\n")], {type: "text/csv;charset=utf-8"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "ETF份额与资金_" + D.meta.latestDate + ".csv";
+    a.download = "ETF份额与资金_" + rangeName() + "_" + D.meta.latestDate + ".csv";
     a.click();
   });
 
