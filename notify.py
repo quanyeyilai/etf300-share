@@ -140,9 +140,25 @@ def build_content(top_n=10):
     lines.append("完整榜单与图表：" + SITE)
     content = "\n".join(lines)
 
-    json.dump({"codes": now_codes, "date": date, "fng": fv, "emotion": ev},
-              open(LAST, "w", encoding="utf-8"), ensure_ascii=False)
+    rec = {"codes": now_codes, "date": date, "fng": fv, "emotion": ev}
+    json.dump(rec, open(LAST, "w", encoding="utf-8"), ensure_ascii=False)
+    # 同时写一份到网页目录：本地定时任务据此判断是否已由云端推送过
+    try:
+        json.dump(rec, open(os.path.join(BASE, "docs", "data", "notify_last.json"),
+                            "w", encoding="utf-8"), ensure_ascii=False)
+    except Exception:
+        pass
     return content, date, len(rows)
+
+
+def pushed_online(date):
+    """网页上是否已记录今天的推送（云端推送过的标志）。"""
+    try:
+        req = urllib.request.Request(SITE + "data/notify_last.json", headers={"User-Agent": UA})
+        j = json.loads(urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "ignore"))
+        return j.get("date") == date
+    except Exception:
+        return False
 
 
 # ---------------- 各通道发送 ----------------
@@ -212,8 +228,14 @@ def main():
         except (IndexError, ValueError):
             pass
 
+    force = "--force" in sys.argv
     content, date, rows = build_content(n)
     title = "%s 板块估值榜 Top%d" % (date, rows)
+
+    # 云端（GitHub Actions）已经推过当天的内容时，本地不再重复推
+    if not force and not dry and pushed_online(date):
+        log("云端今日（%s）已推送，跳过本地重复推送" % date)
+        return 0
 
     if dry:
         print("-" * 60)
