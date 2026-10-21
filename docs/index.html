@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>宽基ETF 份额与资金追踪</title>
+<meta name="robots" content="noindex,nofollow">
 <script src="./data/data.js"></script>
 <script src="./data/macro.js"></script>
 <script src="./vendor/echarts.min.js"></script>
@@ -80,9 +81,34 @@
     .tools{gap:6px}
     footer{font-size:11px}
   }
+
+  /* 访问口令（前端遮罩，防随手点开；数据本身仍在前端，请勿放敏感信息） */
+  body.locked{overflow:hidden}
+  #gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:22px;background:var(--bg)}
+  #gate .box{width:100%;max-width:330px;background:var(--card);border:1px solid var(--line);
+    border-radius:16px;padding:24px 22px;box-shadow:var(--shadow)}
+  #gate h3{margin:0 0 8px;font-size:17px}
+  #gate p{margin:0 0 16px;font-size:12px;color:var(--muted);line-height:1.7}
+  #gate input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+    background:var(--bg);color:var(--text);font-size:15px;outline:none;-webkit-appearance:none}
+  #gate input:focus{border-color:var(--brand)}
+  #gate button{width:100%;margin-top:12px;padding:11px;border:none;border-radius:10px;
+    background:var(--brand);color:#fff;font-size:15px}
+  #gate .err{margin-top:10px;font-size:12px;color:var(--up);min-height:16px}
 </style>
 </head>
-<body>
+<body class="locked">
+
+<div id="gate">
+  <div class="box">
+    <h3>宽基ETF 份额与资金追踪</h3>
+    <p>本页面为私人看板，请输入访问口令</p>
+    <input id="gate-pw" type="password" inputmode="numeric" autocomplete="off" placeholder="口令">
+    <button id="gate-ok">进入</button>
+    <div class="err" id="gate-err"></div>
+  </div>
+</div>
+
 <div class="wrap">
   <header class="top">
     <div>
@@ -812,6 +838,59 @@
   if (mq.addEventListener) mq.addEventListener("change", e => { isMobile = e.matches; renderAll(); });
   syncChips();
   renderAll();
+
+  // ---------------- 访问口令 ----------------
+  // 前端遮罩：挡住随手点开的人；数据仍在前端文件中，请勿放置敏感信息。
+  // 修改口令：运行 python set_password.py 你的新口令
+  (function () {
+    const AUTH = {
+      salt: "etf300-share",
+      sha: "625dcc607a85f17459342fb8546004b44cc7bdb25e7245a55e154209ce5e3676",
+      fnv: "407bbab7"
+    };
+    const KEY = "etf_gate_ok";
+    const gate = el("gate");
+    const pw = el("gate-pw");
+    const err = el("gate-err");
+    function fnv1a(s) {
+      let h = 2166136261;
+      for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return (h >>> 0).toString(16);
+    }
+    function sha256(s) {
+      if (window.crypto && crypto.subtle && window.TextEncoder) {
+        return crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)).then(b =>
+          Array.from(new Uint8Array(b)).map(x => ("0" + x.toString(16)).slice(-2)).join(""));
+      }
+      return Promise.resolve(null);
+    }
+    function unlock() {
+      try { localStorage.setItem(KEY, "1"); } catch (e) {}
+      if (gate) gate.remove();
+      document.body.classList.remove("locked");
+      Object.values(charts).forEach(c => c.resize());
+    }
+    let passed = false;
+    try { passed = localStorage.getItem(KEY) === "1"; } catch (e) {}
+    if (passed) { unlock(); return; }
+
+    function submit() {
+      const v = (pw.value || "").trim();
+      if (!v) return;
+      sha256(AUTH.salt + v).then(h => h || fnv1a(AUTH.salt + v)).then(h => {
+        if (h === AUTH.sha || h === AUTH.fnv) {
+          unlock();
+        } else {
+          err.textContent = "口令不正确";
+          pw.value = "";
+          pw.focus();
+        }
+      });
+    }
+    el("gate-ok").addEventListener("click", submit);
+    pw.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+    setTimeout(() => { try { pw.focus(); } catch (e) {} }, 100);
+  })();
 })();
 </script>
 </body>
