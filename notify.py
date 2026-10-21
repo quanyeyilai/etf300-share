@@ -187,7 +187,23 @@ def send_wecom(title, content):
                         "markdown": {"content": content}})
 
 
+def load_config():
+    """从 data/notify_config.json 读取配置（该文件不入库，避免泄露 token）。"""
+    path = os.path.join(BASE, "data", "notify_config.json")
+    if not os.path.exists(path):
+        return
+    try:
+        cfg = json.load(open(path, encoding="utf-8"))
+    except Exception as exc:
+        log("配置文件读取失败：%s" % exc)
+        return
+    for k in ("PUSHPLUS_TOKEN", "PUSHPLUS_TOPIC", "SERVERCHAN_KEY", "WECOM_WEBHOOK"):
+        if cfg.get(k) and not os.environ.get(k):
+            os.environ[k] = str(cfg[k])
+
+
 def main():
+    load_config()
     dry = "--dry-run" in sys.argv
     n = 10
     if "--n" in sys.argv:
