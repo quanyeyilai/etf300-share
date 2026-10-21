@@ -43,11 +43,14 @@ jobs:
           echo "运行：python update.py $ARGS"
           python update.py $ARGS
 
+      - name: 抓取板块估值榜
+        run: python sector.py
+
       - name: 提交并推送
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/etf_shares.csv docs/data/data.js docs/data/data.json
+          git add data/etf_shares.csv data/macro.csv docs/data/data.js docs/data/data.json docs/data/macro.js docs/data/sector.js
           if git diff --staged --quiet; then
             echo "数据无变化，跳过提交"
           else

@@ -12,22 +12,17 @@ WEB = os.path.join(BASE, "docs")
 SRC = os.path.join(WEB, "index.html")
 DATA = os.path.join(WEB, "data", "data.js")
 MACRO = os.path.join(WEB, "data", "macro.js")
+SECTOR = os.path.join(WEB, "data", "sector.js")
 ECHARTS = os.path.join(WEB, "vendor", "echarts.min.js")
 OUT = os.path.join(BASE, "沪深300ETF份额看板.html")
 
+# 数据与依赖：缺哪一个就移除对应引用，保证单文件仍能打开
 TAGS = [
     ('<script src="./data/data.js"></script>', DATA),
+    ('<script src="./data/macro.js"></script>', MACRO),
+    ('<script src="./data/sector.js"></script>', SECTOR),
     ('<script src="./vendor/echarts.min.js"></script>', ECHARTS),
 ]
-
-
-def inline_macro(html):
-    tag = '<script src="./data/macro.js"></script>'
-    if tag in html and os.path.exists(MACRO):
-        html = html.replace(tag, "<script>\n" + open(MACRO, encoding="utf-8").read() + "\n</script>")
-    elif tag in html:
-        html = html.replace(tag, "")
-    return html
 
 
 def main():
@@ -37,11 +32,13 @@ def main():
     html = open(SRC, encoding="utf-8").read()
     for tag, path in TAGS:
         if tag not in html:
-            print("index.html 中未找到引用：" + tag)
-            return 1
+            continue
+        if not os.path.exists(path):
+            html = html.replace(tag, "")
+            print("缺少数据文件，已跳过：" + os.path.basename(path))
+            continue
         inner = open(path, encoding="utf-8").read()
         html = html.replace(tag, "<script>\n" + inner + "\n</script>")
-    html = inline_macro(html)
     with open(OUT, "w", encoding="utf-8") as f:
         f.write(html)
     size = os.path.getsize(OUT) / 1024.0

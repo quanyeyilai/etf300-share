@@ -7,6 +7,7 @@
 <meta name="robots" content="noindex,nofollow">
 <script src="./data/data.js"></script>
 <script src="./data/macro.js"></script>
+<script src="./data/sector.js"></script>
 <script src="./vendor/echarts.min.js"></script>
 <style>
   :root{
@@ -50,6 +51,10 @@
   .ranges{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .ranges::-webkit-scrollbar{height:0}
   .ranges .tag,.ranges button{flex:0 0 auto}
+  .subhead{font-size:12px;color:var(--muted);margin:10px 0 2px}
+  .mini{display:block;font-size:10px;color:var(--muted);font-weight:400}
+  #sec-table tbody tr{cursor:pointer}
+  #sec-table tbody tr.cur td{background:rgba(58,110,240,.12)}
   .chart{width:100%;height:420px}
   .chart.sm{height:330px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
@@ -210,6 +215,49 @@
   </section>
 
   <section class="panel">
+    <h2>板块估值榜 <span>PE / PB 及近 10 年历史分位；点击任意板块查看详细指标</span></h2>
+    <div class="ctrl">
+      <div class="group"><span class="tag">范围</span>
+        <button class="secscope active" data-s="a">A股行业主题</button>
+        <button class="secscope" data-s="sector">全部行业主题</button>
+        <button class="secscope" data-s="all">全市场</button>
+      </div>
+      <div class="group"><span class="tag">排序</span>
+        <button class="secsort active" data-k="pePct">PE分位</button>
+        <button class="secsort" data-k="pbPct">PB分位</button>
+        <button class="secsort" data-k="div">股息率</button>
+        <button class="secsort" data-k="pe">PE</button>
+      </div>
+      <div class="group"><span class="tag">显示</span>
+        <button class="secn active" data-n="10">10</button>
+        <button class="secn" data-n="20">20</button>
+        <button class="secn" data-n="0">全部</button>
+      </div>
+    </div>
+    <div class="scroll"><table id="sec-table"></table></div>
+  </section>
+
+  <section class="panel" id="sec-detail" hidden>
+    <h2 id="sec-title">板块详情 <span>点击上方榜单中的板块</span></h2>
+    <div id="sec-cards" class="cards"></div>
+    <div class="grid2">
+      <div>
+        <div class="subhead">PE 历史（月度）</div>
+        <div class="ctrl"><div class="group ranges" data-p="secPe" data-set="month"></div></div>
+        <div id="chart-sec-pe" class="chart sm"></div>
+      </div>
+      <div>
+        <div class="subhead">PB 历史（月度）</div>
+        <div class="ctrl"><div class="group ranges" data-p="secPb" data-set="month"></div></div>
+        <div id="chart-sec-pb" class="chart sm"></div>
+      </div>
+    </div>
+    <div class="subhead">板块指数走势（近 3 年周频）</div>
+    <div class="ctrl"><div class="group ranges" data-p="secPx" data-set="week"></div></div>
+    <div id="chart-sec-px" class="chart"></div>
+  </section>
+
+  <section class="panel">
     <h2>明细数据 <span>最近交易日在上，跟随上方区间与基金选择</span></h2>
     <div class="ctrl">
       <div class="group ranges" data-p="table"></div>
@@ -253,7 +301,8 @@
   const state = {metric: "share", codes: G300.slice(), cmp: "flow", rows: 20,
     ranges: {cards: DEF_RANGE, macro: DEF_RANGE, main: DEF_RANGE, delta: DEF_RANGE,
              flow: DEF_RANGE, premium: DEF_RANGE, compare: DEF_RANGE, margin: DEF_RANGE,
-             div: DEF_RANGE, emotion: DEF_RANGE, fng: DEF_RANGE, table: DEF_RANGE}};
+             div: DEF_RANGE, emotion: DEF_RANGE, fng: DEF_RANGE, table: DEF_RANGE,
+             secPe: 36, secPb: 36, secPx: 156}};
 
   const el = id => document.getElementById(id);
   const fmt = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? "-" : Number(v).toFixed(d);
@@ -314,7 +363,12 @@
   }
 
   const RANGE_NAME = {20: "1个月", 60: "3个月", 120: "6个月", 250: "1年", 750: "3年", 0: "全部"};
-  const RANGE_OPTS = [[20, "1个月"], [60, "3个月"], [120, "6个月"], [250, "1年"], [750, "3年"], [0, "全部"]];
+  // 不同数据频率的区间档位：day=交易日，month=月度序列，week=周频序列
+  const RANGE_SETS = {
+    day: [[20, "1个月"], [60, "3个月"], [120, "6个月"], [250, "1年"], [750, "3年"], [0, "全部"]],
+    month: [[12, "近1年"], [36, "近3年"], [60, "近5年"], [120, "近10年"], [0, "全部"]],
+    week: [[52, "近1年"], [156, "近3年"], [260, "近5年"], [0, "全部"]]
+  };
   const rangeName = key => RANGE_NAME[state.ranges[key]] || (state.ranges[key] + " 日");
 
   function slice(key) {
@@ -784,6 +838,118 @@
     chart("chart-fng").setOption(opt, true);
   }
 
+  // ---------------- 板块估值榜 ----------------
+  const SECT = window.ETF_SECTOR;
+  const hasSector = !!(SECT && SECT.list && SECT.list.length);
+  const sec = {scope: "a", sort: "pePct", n: 10,
+    code: (SECT && SECT.top && SECT.top[0]) || (hasSector ? SECT.list[0].code : null)};
+  const pctText = v => v == null ? "-" : (v * 100).toFixed(1) + "%";
+  const SEC_SORT = {
+    pePct: (x, y) => (x.pe > 0 && x.pePct != null ? x.pePct : 9e9) -
+                     (y.pe > 0 && y.pePct != null ? y.pePct : 9e9),
+    pbPct: (x, y) => (x.pbPct == null ? 9e9 : x.pbPct) - (y.pbPct == null ? 9e9 : y.pbPct),
+    pe: (x, y) => (x.pe > 0 ? x.pe : 9e9) - (y.pe > 0 ? y.pe : 9e9),
+    div: (x, y) => (y.div || 0) - (x.div || 0)
+  };
+
+  function secRows() {
+    if (!hasSector) return [];
+    const rows = SECT.list.filter(r => sec.scope === "a" ? (r.region === "A股" && r.type === "3")
+      : sec.scope === "sector" ? r.type === "3" : true);
+    rows.sort(SEC_SORT[sec.sort] || SEC_SORT.pePct);
+    return sec.n > 0 ? rows.slice(0, sec.n) : rows;
+  }
+
+  function renderSecTable() {
+    if (!hasSector) return;
+    const rows = secRows();
+    if (rows.length && !rows.some(r => r.code === sec.code)) sec.code = rows[0].code;
+    let h = "<thead><tr><th>板块</th><th>类型</th><th>PE</th><th>PB</th><th>ROE</th>" +
+            "<th>股息率</th><th>PE分位</th><th>PB分位</th><th>状态</th></tr></thead><tbody>";
+    for (const r of rows) {
+      h += `<tr data-c="${r.code}"${r.code === sec.code ? ' class="cur"' : ""}>` +
+        `<td><b>${r.name}</b><span class="mini">${r.code}</span></td>` +
+        `<td>${r.typeName}${r.region === "A股" ? "" : " · " + r.region}</td>` +
+        `<td>${r.pe > 0 ? fmt(r.pe, 2) : "亏损"}</td><td>${fmt(r.pb, 2)}</td>` +
+        `<td>${fmt(r.roe, 2)}%</td><td>${fmt(r.div, 2)}%</td>` +
+        `<td>${pctText(r.pePct)}</td><td>${pctText(r.pbPct)}</td><td>${r.eva}</td></tr>`;
+    }
+    el("sec-table").innerHTML = h + "</tbody>";
+    document.querySelectorAll("#sec-table tbody tr").forEach(tr => tr.addEventListener("click", () => {
+      sec.code = tr.dataset.c; renderSecTable(); renderSecDetail();
+    }));
+  }
+
+  function renderSecDetail() {
+    if (!hasSector) return;
+    const box = el("sec-detail");
+    const r = SECT.list.find(x => x.code === sec.code);
+    if (!r) { box.hidden = true; return; }
+    box.hidden = false;
+    el("sec-title").innerHTML = r.name + " <span>" + r.code + " · " + r.typeName + " · " +
+      r.region + " · " + r.eva + "</span>";
+    const items = [
+      ["PE", r.pe > 0 ? fmt(r.pe, 2) : "亏损", r.pe > 0 ? pctText(r.pePct) : "-", "#3b5bdb"],
+      ["PB", fmt(r.pb, 2), pctText(r.pbPct), "#f2994a"],
+      ["ROE", fmt(r.roe, 2), "%", "#1a9d5c"],
+      ["股息率", fmt(r.div, 2), "%", "#d92b3a"]
+    ];
+    el("sec-cards").innerHTML = items.map(t => `<div class="card">
+      <div class="label"><span class="dot" style="background:${t[3]}"></span>${t[0]}</div>
+      <div class="value">${t[1]}<small>${t[2]}</small></div>
+    </div>`).join("");
+    renderSecPe(); renderSecPb(); renderSecPx();
+  }
+
+  function secTail(arr, key) {
+    if (!arr || !arr.length) return [];
+    const n0 = state.ranges[key] || 0;
+    const n = n0 > 0 ? Math.min(n0, arr.length) : arr.length;
+    return arr.slice(arr.length - n);
+  }
+  function hexA(hex, a) {
+    const v = parseInt(hex.replace("#", ""), 16);
+    return "rgba(" + ((v >> 16) & 255) + "," + ((v >> 8) & 255) + "," + (v & 255) + "," + a + ")";
+  }
+  function secEmpty(id, text) {
+    chart(id).setOption({backgroundColor: "transparent",
+      title: {text, left: "center", top: "middle",
+        textStyle: {color: isDark() ? "#93a0b8" : "#6b7488", fontSize: 13}}}, true);
+  }
+  function secLine(id, name, dates, values, key, color, unit) {
+    if (!dates || !dates.length) { secEmpty(id, "暂无数据"); return; }
+    const opt = baseOption(false);
+    const dark = isDark();
+    opt.xAxis.data = secTail(dates, key);
+    opt.yAxis[0].name = isMobile ? "" : unit;
+    opt.series = [{name, type: "line", smooth: true, symbol: "none",
+      lineStyle: {width: 2, color}, itemStyle: {color},
+      areaStyle: {color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        {offset: 0, color: hexA(color, dark ? .34 : .22)}, {offset: 1, color: hexA(color, 0)}])},
+      data: secTail(values, key)}];
+    opt.tooltip.valueFormatter = v => v == null ? "-" : Number(v).toFixed(2);
+    chart(id).setOption(opt, true);
+  }
+
+  function renderSecPe() {
+    if (!hasSector || !sec.code) return;
+    const h = SECT.hist[sec.code];
+    if (!h || !h.dates.length) { secEmpty("chart-sec-pe", "暂无 PE 历史"); return; }
+    secLine("chart-sec-pe", "PE", h.dates, h.pe, "secPe", "#3b5bdb", "PE");
+  }
+  function renderSecPb() {
+    if (!hasSector || !sec.code) return;
+    const h = SECT.hist[sec.code];
+    if (!h || !h.dates.length) { secEmpty("chart-sec-pb", "暂无 PB 历史"); return; }
+    secLine("chart-sec-pb", "PB", h.dates, h.pb, "secPb", "#f2994a", "PB");
+  }
+  function renderSecPx() {
+    if (!hasSector || !sec.code) return;
+    const k = SECT.kline[sec.code];
+    if (!k || !k.dates.length) { secEmpty("chart-sec-px", "暂无走势数据（仅 A 股指数提供）"); return; }
+    secLine("chart-sec-px", "收盘", k.dates, k.close, "secPx", "#7b61ff", "点位");
+  }
+
   function renderTable() {
     const n = (state.rows === undefined || state.rows === null) ? 20 : state.rows;   // 0 = 全部
     const s = slice("table");
@@ -818,11 +984,13 @@
 
   function renderAll() {
     renderCards(); renderMacroCards(); renderMain(); renderDelta(); renderFlow(); renderPremium();
-    renderCompare(); renderMargin(); renderDiv(); renderEmotion(); renderFng(); renderTable();
+    renderCompare(); renderMargin(); renderDiv(); renderEmotion(); renderFng();
+    renderSecTable(); renderSecDetail(); renderTable();
   }
   function renderCharts() {
     renderMain(); renderDelta(); renderFlow(); renderPremium(); renderCompare();
     renderMargin(); renderDiv(); renderEmotion(); renderFng();
+    renderSecPe(); renderSecPb(); renderSecPx();
   }
 
   el("m-latest").textContent = D.meta.latestDate;
@@ -854,6 +1022,7 @@
     premium: () => renderPremium(), compare: () => renderCompare(),
     margin: () => renderMargin(), div: () => renderDiv(), emotion: () => renderEmotion(),
     fng: () => renderFng(),
+    secPe: () => renderSecPe(), secPb: () => renderSecPb(), secPx: () => renderSecPx(),
     table: () => renderTable()
   };
   function syncRanges() {
@@ -864,7 +1033,8 @@
   function mountRanges() {
     document.querySelectorAll(".ranges").forEach(box => {
       const key = box.dataset.p;
-      box.innerHTML = '<span class="tag">区间</span>' + RANGE_OPTS.map(
+      const opts = RANGE_SETS[box.dataset.set] || RANGE_SETS.day;
+      box.innerHTML = '<span class="tag">区间</span>' + opts.map(
         o => `<button class="range" data-p="${key}" data-n="${o[0]}">${o[1]}</button>`).join("");
     });
     document.querySelectorAll(".range").forEach(b => b.addEventListener("click", () => {
@@ -898,6 +1068,18 @@
     }
     document.querySelectorAll(".grp").forEach(x => x.classList.remove("active"));
     syncChips(); renderCards(); renderCharts(); renderTable();
+  }));
+  document.querySelectorAll(".secscope").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".secscope").forEach(x => x.classList.remove("active"));
+    b.classList.add("active"); sec.scope = b.dataset.s; renderSecTable(); renderSecDetail();
+  }));
+  document.querySelectorAll(".secsort").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".secsort").forEach(x => x.classList.remove("active"));
+    b.classList.add("active"); sec.sort = b.dataset.k; renderSecTable(); renderSecDetail();
+  }));
+  document.querySelectorAll(".secn").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".secn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active"); sec.n = +b.dataset.n; renderSecTable(); renderSecDetail();
   }));
   el("btn-theme").addEventListener("click", () => {
     const dark = isDark();
