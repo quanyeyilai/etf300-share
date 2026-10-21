@@ -46,11 +46,22 @@ jobs:
       - name: 抓取板块估值榜
         run: python sector.py
 
+      # 只在盘后那次（UTC 11:00 = 北京 19:00）与手动触发时推送，避免一天两条
+      - name: 微信推送每日速报
+        if: github.event_name != 'schedule' || github.event.schedule == '0 11 * * 1-5'
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          PUSHPLUS_TOPIC: ${{ secrets.PUSHPLUS_TOPIC }}
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+        continue-on-error: true
+        run: python notify.py
+
       - name: 提交并推送
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/etf_shares.csv data/macro.csv docs/data/data.js docs/data/data.json docs/data/macro.js docs/data/sector.js
+          git add data/etf_shares.csv data/macro.csv data/notify_last.json docs/data/data.js docs/data/data.json docs/data/macro.js docs/data/sector.js
           if git diff --staged --quiet; then
             echo "数据无变化，跳过提交"
           else

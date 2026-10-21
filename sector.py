@@ -82,6 +82,7 @@ def eva_list():
             "div": round((it.get("yeild") or 0) * 100, 2),
             "pePct": it.get("pe_percentile"),
             "pbPct": it.get("pb_percentile"),
+            "date": it.get("date"),
             "eva": {"low": "低估", "mid": "适中", "high": "高估"}.get(it.get("eva_type"), "-"),
         })
     return rows
@@ -168,6 +169,15 @@ def _load_detail(code):
     return code, {"dates": dates, "pe": pes, "pb": pbs, "roe": roes}, {"dates": kdates, "close": kclose}
 
 
+def data_date(rows):
+    """估值数据日期（蛋卷只给 MM-DD，补上年份）。"""
+    for r in rows:
+        d = r.get("date")
+        if d:
+            return "%d-%s" % (dt.date.today().year, d)
+    return dt.date.today().strftime("%Y-%m-%d")
+
+
 def build(workers=8):
     rows = eva_list()
     log("板块估值列表：%d 个指数" % len(rows))
@@ -202,6 +212,7 @@ def build(workers=8):
     payload = {
         "meta": {
             "updatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "date": data_date(rows),
             "source": "蛋卷基金指数估值 / 腾讯财经日线",
             "count": len(rows),
             "note": "PE、PB 分位为蛋卷基于近 10 年数据的历史百分位；走势为近 3 年周频收盘",
