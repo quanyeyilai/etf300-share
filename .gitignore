@@ -2,6 +2,13 @@ __pycache__/
 *.py[cod]
 # 微信推送密钥（不入库）
 data/notify_config.json
+# 登录账号明文（不入库）；发布到网页的只有加密后的 bundle.js
+data/users.txt
+# 明文数据不发布到 GitHub Pages
+docs/data/data.js
+docs/data/macro.js
+docs/data/sector.js
+docs/data/data.json
 data/*.log
 data/*.err
 data/init*.log

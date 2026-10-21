@@ -47,6 +47,13 @@ jobs:
         continue-on-error: true
         run: python sector.py
 
+      - name: 加密打包数据
+        # 未配置 Secret ETF_USERS 时跳过（此时页面上仍是用本地打包的旧密文）
+        continue-on-error: true
+        env:
+          ETF_USERS: ${{ secrets.ETF_USERS }}
+        run: node protect.js
+
       # 只在盘后那次（UTC 11:00 = 北京 19:00）与手动触发时推送，避免一天两条
       - name: 微信推送每日速报
         if: github.event_name != 'schedule' || github.event.schedule == '0 11 * * 1-5'
@@ -62,7 +69,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/etf_shares.csv data/macro.csv data/notify_last.json docs/data/data.js docs/data/data.json docs/data/macro.js docs/data/sector.js docs/data/notify_last.json
+          git add data/etf_shares.csv data/macro.csv data/notify_last.json docs/data/notify_last.json docs/data/bundle.js
           if git diff --staged --quiet; then
             echo "数据无变化，跳过提交"
           else

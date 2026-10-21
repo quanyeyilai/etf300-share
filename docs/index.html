@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>宽基ETF 份额与资金追踪</title>
 <meta name="robots" content="noindex,nofollow">
-<script src="./data/data.js"></script>
-<script src="./data/macro.js"></script>
-<script src="./data/sector.js"></script>
+<script src="./data/bundle.js"></script>
 <script src="./vendor/echarts.min.js"></script>
 <style>
   :root{
@@ -93,19 +91,24 @@
     footer{font-size:11px}
   }
 
-  /* 访问口令（前端遮罩，防随手点开；数据本身仍在前端，请勿放敏感信息） */
+  /* 登录门禁：数据经 AES-256-GCM 加密，只有账号密码正确才能解开 */
   body.locked{overflow:hidden}
   #gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:22px;background:var(--bg)}
   #gate .box{width:100%;max-width:330px;background:var(--card);border:1px solid var(--line);
     border-radius:16px;padding:24px 22px;box-shadow:var(--shadow)}
   #gate h3{margin:0 0 8px;font-size:17px}
   #gate p{margin:0 0 16px;font-size:12px;color:var(--muted);line-height:1.7}
-  #gate input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
-    background:var(--bg);color:var(--text);font-size:15px;outline:none;-webkit-appearance:none}
+  #gate input[type=text],#gate input[type=password]{width:100%;margin-top:8px;padding:11px 12px;
+    border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);
+    font-size:15px;outline:none;-webkit-appearance:none}
   #gate input:focus{border-color:var(--brand)}
+  #gate .keep{display:flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;color:var(--muted)}
+  #gate .keep input{width:auto;margin:0}
   #gate button{width:100%;margin-top:12px;padding:11px;border:none;border-radius:10px;
     background:var(--brand);color:#fff;font-size:15px}
   #gate .err{margin-top:10px;font-size:12px;color:var(--up);min-height:16px}
+  #btn-logout{position:fixed;right:12px;bottom:12px;z-index:60;padding:6px 11px;font-size:12px;
+    border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);cursor:pointer}
 </style>
 </head>
 <body class="locked">
@@ -113,8 +116,10 @@
 <div id="gate">
   <div class="box">
     <h3>宽基ETF 份额与资金追踪</h3>
-    <p>本页面为私人看板，请输入访问口令</p>
-    <input id="gate-pw" type="password" inputmode="numeric" autocomplete="off" placeholder="口令">
+    <p>本页面为私人看板，请输入账号密码</p>
+    <input id="gate-user" type="text" autocomplete="username" placeholder="账号">
+    <input id="gate-pw" type="password" autocomplete="current-password" placeholder="密码">
+    <label class="keep"><input id="gate-keep" type="checkbox"> 记住登录 7 天</label>
     <button id="gate-ok">进入</button>
     <div class="err" id="gate-err"></div>
   </div>
@@ -281,6 +286,8 @@
 </div>
 
 <script>
+// 全部渲染逻辑包成 ETF_BOOT，只有登录解密成功后才执行
+window.ETF_BOOT = function () {
 (function () {
   const D = window.ETF_DATA;
   if (!D || !D.dates || !D.dates.length) {
@@ -1148,58 +1155,109 @@
   syncChips();
   renderAll();
 
-  // ---------------- 访问口令 ----------------
-  // 前端遮罩：挡住随手点开的人；数据仍在前端文件中，请勿放置敏感信息。
-  // 修改口令：运行 python set_password.py 你的新口令
-  (function () {
-    const AUTH = {
-      salt: "etf300-share",
-      sha: "625dcc607a85f17459342fb8546004b44cc7bdb25e7245a55e154209ce5e3676",
-      fnv: "407bbab7"
-    };
-    const KEY = "etf_gate_ok";
-    const gate = el("gate");
-    const pw = el("gate-pw");
-    const err = el("gate-err");
-    function fnv1a(s) {
-      let h = 2166136261;
-      for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-      return (h >>> 0).toString(16);
-    }
-    function sha256(s) {
-      if (window.crypto && crypto.subtle && window.TextEncoder) {
-        return crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)).then(b =>
-          Array.from(new Uint8Array(b)).map(x => ("0" + x.toString(16)).slice(-2)).join(""));
-      }
-      return Promise.resolve(null);
-    }
-    function unlock() {
-      try { localStorage.setItem(KEY, "1"); } catch (e) {}
-      if (gate) gate.remove();
-      document.body.classList.remove("locked");
-      Object.values(charts).forEach(c => c.resize());
-    }
-    let passed = false;
-    try { passed = localStorage.getItem(KEY) === "1"; } catch (e) {}
-    if (passed) { unlock(); return; }
+})();
+};
 
-    function submit() {
-      const v = (pw.value || "").trim();
-      if (!v) return;
-      sha256(AUTH.salt + v).then(h => h || fnv1a(AUTH.salt + v)).then(h => {
-        if (h === AUTH.sha || h === AUTH.fnv) {
-          unlock();
-        } else {
-          err.textContent = "口令不正确";
-          pw.value = "";
-          pw.focus();
-        }
-      });
+// ---------------- 登录（AES-256-GCM 解密数据）----------------
+// 数据是加密的：密码错误 → 解不开主密钥 → 看不到任何内容。
+(function () {
+  const B = window.ETF_BUNDLE;
+  const gate = document.getElementById("gate");
+  const booted = () => {
+    if (gate) gate.remove();
+    document.body.classList.remove("locked");
+    window.ETF_BOOT();
+    const btn = document.createElement("button");
+    btn.id = "btn-logout";
+    btn.textContent = "退出登录";
+    btn.addEventListener("click", logout);
+    document.body.appendChild(btn);
+  };
+
+  // 没有加密包（旧版明文模式）→ 直接启动，保持兼容
+  if (!B || !B.ct) { booted(); return; }
+  if (!window.crypto || !crypto.subtle) {
+    document.getElementById("gate-err").textContent = "当前浏览器不支持加密，请用 Chrome / Edge 打开";
+    return;
+  }
+
+  const SKEY = "etf_mk_s", LKEY = "etf_mk_l";
+  const toArr = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const toB64 = a => btoa(String.fromCharCode.apply(null, new Uint8Array(a)));
+
+  async function kek(pw, salt) {
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey({name:"PBKDF2", salt, iterations:B.iter, hash:"SHA-256"},
+      base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+  }
+  async function unwrap(acc, pw) {
+    const k = await kek(pw, toArr(acc.s));
+    return crypto.subtle.decrypt({name:"AES-GCM", iv:toArr(acc.n)}, k, toArr(acc.k));
+  }
+  async function decryptData(mk) {
+    const key = await crypto.subtle.importKey("raw", mk, {name:"AES-GCM"}, false, ["decrypt"]);
+    const raw = await crypto.subtle.decrypt({name:"AES-GCM", iv:toArr(B.nonce)}, key, toArr(B.ct));
+    return JSON.parse(new TextDecoder().decode(raw));
+  }
+  function apply(b) {
+    if (b.data) window.ETF_DATA = b.data;
+    if (b.macro) window.ETF_MACRO = b.macro;
+    if (b.sector) window.ETF_SECTOR = b.sector;
+  }
+  function keepMk(mk, remember) {
+    try { sessionStorage.setItem(SKEY, toB64(mk)); } catch (e) {}
+    try {
+      if (remember) localStorage.setItem(LKEY, JSON.stringify({mk: toB64(mk), exp: Date.now() + 7 * 864e5}));
+      else localStorage.removeItem(LKEY);
+    } catch (e) {}
+  }
+  function logout() {
+    try { sessionStorage.removeItem(SKEY); localStorage.removeItem(LKEY); } catch (e) {}
+    location.reload();
+  }
+
+  const uEl = document.getElementById("gate-user");
+  const pEl = document.getElementById("gate-pw");
+  const eEl = document.getElementById("gate-err");
+  const kEl = document.getElementById("gate-keep");
+
+  async function restore() {
+    const s = sessionStorage.getItem(SKEY);
+    if (s) {
+      try { apply(await decryptData(toArr(s).buffer)); booted(); return true; }
+      catch (e) { try { sessionStorage.removeItem(SKEY); } catch (e2) {} }
     }
-    el("gate-ok").addEventListener("click", submit);
-    pw.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
-    setTimeout(() => { try { pw.focus(); } catch (e) {} }, 100);
-  })();
+    try {
+      const l = JSON.parse(localStorage.getItem(LKEY) || "null");
+      if (l && l.mk && l.exp > Date.now()) { apply(await decryptData(toArr(l.mk).buffer)); booted(); return true; }
+    } catch (e) {}
+    return false;
+  }
+
+  async function submit() {
+    const user = (uEl.value || "").trim();
+    const pw = pEl.value || "";
+    if (!user || !pw) { eEl.textContent = "请输入账号和密码"; return; }
+    eEl.textContent = "验证中…";
+    try {
+      const acc = (B.accounts || []).find(a => a.u === user);
+      if (!acc) throw new Error("no user");
+      const mk = await unwrap(acc, pw);          // 密码错误 → AES-GCM 解密失败
+      const b = await decryptData(mk);
+      apply(b);
+      keepMk(mk, !!(kEl && kEl.checked));
+      booted();
+    } catch (e) {
+      eEl.textContent = "账号或密码不正确";
+      pEl.value = ""; pEl.focus();
+    }
+  }
+
+  document.getElementById("gate-ok").addEventListener("click", submit);
+  pEl.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+  uEl.addEventListener("keydown", e => { if (e.key === "Enter") pEl.focus(); });
+
+  restore().then(ok => { if (!ok) { try { uEl.focus(); } catch (e) {} } });
 })();
 </script>
 </body>
