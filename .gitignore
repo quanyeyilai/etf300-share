@@ -9,6 +9,10 @@ docs/data/data.js
 docs/data/macro.js
 docs/data/sector.js
 docs/data/data.json
+# 原始抓取存档也不入库（云端靠 Actions 缓存增量）
+data/etf_market.csv
+data/etf_shares.csv
+data/macro.csv
 data/*.log
 data/*.err
 data/init*.log
