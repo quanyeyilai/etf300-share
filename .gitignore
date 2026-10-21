@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+data/*.log
+data/*.err
+data/init*.log
+data/init*.err
+data/dom*.html
+沪深300ETF份额看板.html
+.DS_Store
