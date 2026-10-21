@@ -135,5 +135,5 @@ def fetch_szse(code, start_date, end_date, max_pages=60):
         if page >= pagecount or not rows:
             break
         page += 1
-        time.sleep(0.2)
+        time.sleep(0.5)   # 深交所对高频请求较敏感，放慢翻页
     return out

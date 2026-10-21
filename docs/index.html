@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>沪深300ETF 份额追踪</title>
+<title>宽基ETF 份额与资金追踪</title>
 <script src="./data/data.js"></script>
 <script src="./vendor/echarts.min.js"></script>
 <style>
@@ -33,20 +33,28 @@
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;box-shadow:var(--shadow)}
   .card .label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
-  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 auto}
   .card .value{font-size:26px;font-weight:700;margin:8px 0 2px;letter-spacing:.5px}
   .card .value small{font-size:13px;font-weight:400;color:var(--muted);margin-left:4px}
   .card .row{font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between;margin-top:4px}
   .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--muted)}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px 8px;box-shadow:var(--shadow);margin-bottom:18px}
   .panel h2{font-size:15px;margin:0 0 12px;font-weight:600}
+  .panel h2 span{font-size:12px;color:var(--muted);font-weight:400;margin-left:8px}
   .ctrl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
   .ctrl .group{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .ctrl .tag{font-size:12px;color:var(--muted);margin-right:2px}
   .chart{width:100%;height:420px}
-  .chart.sm{height:340px}
+  .chart.sm{height:330px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
   @media(max-width:940px){.grid2{grid-template-columns:1fr}.chart{height:360px}}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card)}
+  .scroll{max-height:420px;overflow:auto;border-radius:10px}
+  .empty{padding:60px 0;text-align:center;color:var(--muted)}
+  footer{color:var(--muted);font-size:12px;text-align:center;margin-top:26px;line-height:1.8}
   @media(max-width:640px){
     .wrap{padding:14px 12px 40px}
     h1{font-size:19px}
@@ -65,28 +73,21 @@
     th,td{padding:6px 7px;font-size:12px}
     header.top{margin-bottom:14px}
   }
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
-  th:first-child,td:first-child{text-align:left}
-  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card)}
-  .scroll{max-height:420px;overflow:auto;border-radius:10px}
-  .empty{padding:60px 0;text-align:center;color:var(--muted)}
-  footer{color:var(--muted);font-size:12px;text-align:center;margin-top:26px;line-height:1.8}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
     <div>
-      <h1>沪深300ETF 份额追踪</h1>
+      <h1>宽基ETF 份额与资金追踪</h1>
       <div class="sub">
-        数据源：上交所 ETF 规模 / 深交所 基金规模（交易所清算后数据）<br>
-        最新数据日期 <b id="m-latest">-</b> ｜ 共 <b id="m-count">-</b> 个交易日 ｜ 数据更新于 <b id="m-updated">-</b>
+        份额来源：上交所 ETF 规模 / 深交所 基金规模（清算后数据）｜行情与净值：东方财富<br>
+        最新数据日期 <b id="m-latest">-</b> ｜ 共 <b id="m-count">-</b> 个交易日 ｜ 更新于 <b id="m-updated">-</b>
       </div>
     </div>
     <div class="tools">
       <button id="btn-theme">深色模式</button>
-      <button id="btn-refresh">说明：如何更新</button>
+      <button id="btn-refresh">如何更新</button>
       <a class="btn" id="btn-csv" href="#">导出 CSV</a>
     </div>
   </header>
@@ -94,8 +95,12 @@
   <div id="cards" class="cards"></div>
 
   <section class="panel">
-    <h2>份额趋势</h2>
+    <h2>份额趋势 <span>份额变化 = 资金申赎的代理指标</span></h2>
     <div class="ctrl">
+      <div class="group"><span class="tag">分组</span>
+        <button class="grp active" data-g="300">沪深300系</button>
+        <button class="grp" data-g="all">全部宽基</button>
+      </div>
       <div class="group"><span class="tag">区间</span>
         <button class="range" data-n="20">1个月</button>
         <button class="range" data-n="60">3个月</button>
@@ -116,17 +121,34 @@
 
   <div class="grid2">
     <section class="panel">
-      <h2>每日份额净变化（亿份，申购为正）</h2>
+      <h2>每日份额净变化 <span>亿份，申购为正</span></h2>
       <div id="chart-delta" class="chart sm"></div>
     </section>
     <section class="panel">
-      <h2>份额构成（亿份，堆叠）</h2>
-      <div id="chart-stack" class="chart sm"></div>
+      <h2>净流入金额与成交额 <span>净流入 = 份额变化 × 单位净值</span></h2>
+      <div id="chart-flow" class="chart sm"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="panel">
+      <h2>折溢价率 <span>（收盘价 / 单位净值 − 1），大额买盘常推升溢价</span></h2>
+      <div id="chart-premium" class="chart sm"></div>
+    </section>
+    <section class="panel">
+      <h2>宽基横向对比 <span>区间累计资金动向</span></h2>
+      <div class="ctrl">
+        <div class="group">
+          <button class="cmp active" data-c="flow">净流入金额（亿元）</button>
+          <button class="cmp" data-c="pct">份额变化（%）</button>
+        </div>
+      </div>
+      <div id="chart-compare" class="chart sm"></div>
     </section>
   </div>
 
   <section class="panel">
-    <h2>明细数据（最近交易日在上）</h2>
+    <h2>明细数据 <span>最近交易日在上，跟随上方基金选择</span></h2>
     <div class="ctrl">
       <div class="group"><span class="tag">显示行数</span>
         <button class="rows active" data-n="20">20</button>
@@ -138,9 +160,9 @@
   </section>
 
   <footer>
-    份额单位：原始数据为「万份」，页面统一换算为「亿份」展示（1 亿份 = 10000 万份）。<br>
-    每日更新：运行 <b>运行更新.bat</b>（或 <code>python update.py</code>）；已注册计划任务后会自动在每交易日 18:30 更新。<br>
-    ETF 份额变化可作为资金申赎流向的参考指标，不构成投资建议。
+    份额单位：原始数据为「万份」，页面统一换算为「亿份」（1 亿份 = 10000 万份）。<br>
+    净流入金额 = 当日份额变化 × 单位净值，为资金流向的估算值；折溢价率用收盘价与最近可得单位净值计算，仅供近似参考。<br>
+    ETF 份额与成交额只能反映资金进出，无法识别持有人；国家队持仓以基金定期报告与公告为准。不构成投资建议。
   </footer>
 </div>
 
@@ -152,66 +174,84 @@
       '<div class="empty">暂无数据，请先运行 <b>运行更新.bat</b> 抓取数据。</div>';
     return;
   }
-  const COLORS = {"510300":"#d92b3a","510310":"#3b5bdb","510330":"#f2994a","159919":"#1a9d5c"};
+  const COLORS = {
+    "510300": "#d92b3a", "510310": "#3b5bdb", "510330": "#f2994a", "159919": "#1a9d5c",
+    "510050": "#8e44ad", "510500": "#16a085", "512100": "#c0392b", "159915": "#2c3e50"
+  };
   const TOTAL_COLOR = "#7b61ff";
   const funds = D.funds.map(f => Object.assign({}, f, {color: COLORS[f.code] || "#888"}));
+  const byCode = {};
+  funds.forEach(f => byCode[f.code] = f);
   const dates = D.dates;
+  const G300 = funds.filter(f => f.group === "300").map(f => f.code);
 
-  let state = {range: 120, metric: "share", codes: funds.map(f => f.code)};
+  const state = {range: 120, metric: "share", codes: G300.slice(), cmp: "flow"};
 
   const el = id => document.getElementById(id);
-  const fmt = (v, d = 2) => v === null || v === undefined || isNaN(v) ? "-" : Number(v).toFixed(d);
+  const fmt = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? "-" : Number(v).toFixed(d);
   const sign = v => (v > 0 ? "+" : "") + fmt(v);
   const cls = v => v > 0 ? "up" : (v < 0 ? "down" : "flat");
-  const yi = wan => wan === null || wan === undefined ? null : wan / 10000;  // 万份 -> 亿份
+  const yi = wan => wan === null || wan === undefined ? null : wan / 10000;   // 万份 -> 亿份
 
   const charts = {};
   function chart(id) {
     if (!charts[id]) charts[id] = echarts.init(el(id), null, {renderer: "canvas"});
     return charts[id];
   }
-  function baseOption(dark) {
-    return {
+  const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
+  function baseOption(extraAxis) {
+    const dark = isDark();
+    const opt = {
       backgroundColor: "transparent",
       textStyle: {color: dark ? "#e8ecf5" : "#1b2130"},
-      grid: {left: 58, right: 24, top: 46, bottom: 62},
+      grid: {left: 62, right: extraAxis ? 62 : 24, top: 46, bottom: 62},
       tooltip: {trigger: "axis", axisPointer: {type: "cross"},
         backgroundColor: dark ? "#1b2333" : "#fff",
         borderColor: dark ? "#2c3853" : "#e6e9f2",
         textStyle: {color: dark ? "#e8ecf5" : "#1b2130"}},
-      legend: {top: 6, textStyle: {color: dark ? "#93a0b8" : "#6b7488"}, itemGap: 14},
+      legend: {top: 6, textStyle: {color: dark ? "#93a0b8" : "#6b7488"}, itemGap: 12},
       xAxis: {type: "category", boundaryGap: false,
         axisLine: {lineStyle: {color: dark ? "#2c3853" : "#dfe3ee"}},
         axisLabel: {color: dark ? "#93a0b8" : "#6b7488"}},
-      yAxis: {type: "value", scale: true, splitLine: {lineStyle: {color: dark ? "#222c42" : "#eef1f7"}},
-        axisLabel: {color: dark ? "#93a0b8" : "#6b7488"}},
+      yAxis: [{type: "value", scale: true, splitLine: {lineStyle: {color: dark ? "#222c42" : "#eef1f7"}},
+        axisLabel: {color: dark ? "#93a0b8" : "#6b7488"}}],
       dataZoom: [{type: "inside"}, {type: "slider", height: 18, bottom: 14,
         borderColor: "transparent", backgroundColor: dark ? "#1b2333" : "#f1f4fa",
         textStyle: {color: dark ? "#93a0b8" : "#6b7488"}}]
     };
+    if (extraAxis) {
+      opt.yAxis.push({type: "value", scale: true, splitLine: {show: false},
+        axisLabel: {color: dark ? "#93a0b8" : "#6b7488"}});
+    }
+    return opt;
   }
-  const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
 
   function slice() {
     const n = state.range > 0 ? Math.min(state.range, dates.length) : dates.length;
     const start = dates.length - n;
     return {start, dates: dates.slice(start), idx: dates.slice(start).map((_, i) => start + i)};
   }
+  const at = (code, i) => D.series[code][i];
+  const navAt = (code, i) => (D.market && D.market[code] ? D.market[code].nav[i] : null);
+  const closeAt = (code, i) => (D.market && D.market[code] ? D.market[code].close[i] : null);
+  const amtAt = (code, i) => (D.market && D.market[code] ? D.market[code].amount[i] : null);
 
-  function seriesFor(code, s) {
-    return s.idx.map(i => {
-      const v = D.series[code][i];
-      return v === null || v === undefined ? null : +(v / 10000).toFixed(4);
-    });
+  function prevIdxOf(code, back) {
+    for (let i = dates.length - 1 - back; i >= 0; i--) if (at(code, i) != null) return i;
+    return null;
   }
-  function delta(arr) {
-    return arr.map((v, i) => {
-      if (v === null) return null;
-      let j = i - 1;
-      while (j >= 0 && arr[j] === null) j--;
-      if (j < 0) return null;
-      return +(v - arr[j]).toFixed(4);
-    });
+  function sumAt(i, codes) {
+    let s = 0, ok = false;
+    for (const c of codes) { const v = at(c, i); if (v != null) { s += v; ok = true; } }
+    return ok ? s : null;
+  }
+  function sumNav(i, codes) {   // 份额加权平均净值
+    let num = 0, den = 0;
+    for (const c of codes) {
+      const v = at(c, i), n = navAt(c, i);
+      if (v != null && n) { num += v * n; den += v; }
+    }
+    return den ? num / den : null;
   }
   function ma(arr, n) {
     return arr.map((v, i) => {
@@ -226,83 +266,117 @@
     for (const v of arr) if (v !== null && v !== 0) { base = v; break; }
     return arr.map(v => (v === null || !base) ? null : +(v / base * 100).toFixed(2));
   }
+  function delta(arr) {
+    return arr.map((v, i) => {
+      if (v === null) return null;
+      let j = i - 1;
+      while (j >= 0 && arr[j] === null) j--;
+      return j < 0 ? null : +(v - arr[j]).toFixed(4);
+    });
+  }
+  // 净流入金额（亿元）：Δ份额(万份) × 单位净值(元) / 10000
+  function flowOf(code, s) {
+    const sh = s.idx.map(i => at(code, i));
+    return sh.map((v, i) => {
+      if (v == null) return null;
+      const nav = navAt(code, s.idx[i]);
+      let j = i - 1;
+      while (j >= 0 && sh[j] == null) j--;
+      if (j < 0 || !nav) return null;
+      return +((v - sh[j]) * nav / 10000).toFixed(4);
+    });
+  }
+  function premiumOf(code, s) {
+    return s.idx.map(i => {
+      const c = closeAt(code, i), n = navAt(code, i);
+      return (c != null && n) ? +((c / n - 1) * 100).toFixed(3) : null;
+    });
+  }
+  function sumFlow(s, codes) {
+    const arrs = codes.map(c => flowOf(c, s));
+    return s.idx.map((_, k) => {
+      let v = 0, ok = false;
+      for (const a of arrs) if (a[k] != null) { v += a[k]; ok = true; }
+      return ok ? +v.toFixed(4) : null;
+    });
+  }
+  function sumAmount(s, codes) {
+    return s.idx.map(i => {
+      let v = 0, ok = false;
+      for (const c of codes) { const a = amtAt(c, i); if (a != null) { v += a; ok = true; } }
+      return ok ? +v.toFixed(2) : null;
+    });
+  }
 
   function renderCards() {
     const last = dates.length - 1;
-    const arrOf = code => code === "__total__" ? D.totals : D.series[code];
-    const prevIdx = (code, back) => {
-      const a = arrOf(code);
-      for (let i = last - back; i >= 0; i--) if (a[i] != null) return i;
-      return null;
+    const codes = state.codes;
+    const build = (code) => {
+      const isTotal = code === "__total__";
+      const v = isTotal ? sumAt(last, codes) : at(code, last);
+      const nav = isTotal ? sumNav(last, codes) : navAt(code, last);
+      const pick = back => {
+        if (isTotal) {
+          const i = dates.slice(0, last - back + 1).map((_, k) => k).reverse()
+            .find(k => sumAt(k, codes) != null);
+          return (i === undefined || i === last) ? null : sumAt(i, codes);
+        }
+        const i = prevIdxOf(code, back);
+        return i === null ? null : at(code, i);
+      };
+      const d1raw = (() => {
+        const i = isTotal ? null : prevIdxOf(code, 1);
+        return i === null ? null : (at(code, last) - at(code, i));
+      })();
+      const d1 = isTotal ? (() => {
+        let i = last - 1;
+        while (i >= 0 && sumAt(i, codes) == null) i--;
+        return i < 0 ? null : sumAt(last, codes) - sumAt(i, codes);
+      })() : d1raw;
+      const flow = (d1 != null && nav) ? d1 * nav / 10000 : null;
+      const p5 = pick(5), p20 = pick(20);
+      const v5 = v != null && p5 != null ? v - p5 : null;
+      const v20 = v != null && p20 != null ? v - p20 : null;
+      return {
+        code, name: isTotal ? (codes.length + " 只合计") : (code + " " + byCode[code].name),
+        color: isTotal ? TOTAL_COLOR : byCode[code].color,
+        value: yi(v), d1: yi(d1), pct: (d1 != null && v != null && (v - d1)) ? d1 / (v - d1) * 100 : null,
+        flow, d5: yi(v5), d20: yi(v20)
+      };
     };
-    const totalAt = i => {
-      let s = 0, ok = false;
-      for (const f of funds) { const v = D.series[f.code][i]; if (v != null) { s += v; ok = true; } }
-      return ok ? s : null;
-    };
-    const chg = (code, back) => {
-      const i5 = prevIdx(code, back);
-      const now = code === "__total__" ? totalAt(last) : D.series[code][last];
-      if (i5 === null || now == null) return {};
-      const then = code === "__total__" ? totalAt(i5) : D.series[code][i5];
-      const d = now - then;
-      return {d, pct: then ? d / then * 100 : null};
-    };
-
     let html = "";
-    const tot = totalAt(last);
-    const c1 = chg("__total__", 1), c5 = chg("__total__", 5), c20 = chg("__total__", 20);
-    html += cardHtml({
-      label: "4 只合计", color: TOTAL_COLOR, value: yi(tot),
-      d1: c1.d ? yi(c1.d) : null, p1: c1.pct, d5: c5.d ? yi(c5.d) : null,
-      d20: c20.d ? yi(c20.d) : null, p20: c20.pct
-    });
-    for (const f of funds) {
-      const v = D.series[f.code][last];
-      const a = chg(f.code, 1), b = chg(f.code, 5), c = chg(f.code, 20);
-      html += cardHtml({
-        label: f.code + " " + f.name, color: f.color, value: yi(v),
-        d1: a.d == null ? null : yi(a.d), p1: a.pct,
-        d5: b.d == null ? null : yi(b.d),
-        d20: c.d == null ? null : yi(c.d), p20: c.pct
-      });
-    }
+    if (codes.length > 1) html += cardHtml(build("__total__"));
+    for (const c of codes) html += cardHtml(build(c));
     el("cards").innerHTML = html;
   }
   function cardHtml(o) {
     return `<div class="card">
-      <div class="label"><span class="dot" style="background:${o.color}"></span>${o.label}</div>
+      <div class="label"><span class="dot" style="background:${o.color}"></span>${o.name}</div>
       <div class="value">${fmt(o.value)}<small>亿份</small></div>
-      <div class="row"><span>较上一交易日</span><span class="${cls(o.d1)}">${o.d1 == null ? "-" : sign(o.d1) + "（" + sign(o.p1, 2) + "%）"}</span></div>
-      <div class="row"><span>近 5 日</span><span class="${cls(o.d5)}">${o.d5 == null ? "-" : sign(o.d5)}</span></div>
-      <div class="row"><span>近 20 日</span><span class="${cls(o.d20)}">${o.d20 == null ? "-" : sign(o.d20) + "（" + sign(o.p20, 2) + "%）"}</span></div>
+      <div class="row"><span>日变化</span><span class="${cls(o.d1)}">${o.d1 == null ? "-" : sign(o.d1) + "（" + sign(o.pct, 2) + "%）"}</span></div>
+      <div class="row"><span>净流入</span><span class="${cls(o.flow)}">${o.flow == null ? "-" : sign(o.flow) + " 亿"}</span></div>
+      <div class="row"><span>近 5 / 20 日</span><span class="${cls(o.d5)}">${o.d5 == null ? "-" : sign(o.d5)} / ${o.d20 == null ? "-" : sign(o.d20)}</span></div>
     </div>`;
   }
 
   function renderMain() {
     const s = slice();
-    const opt = baseOption(isDark());
+    const opt = baseOption(false);
     opt.xAxis.data = s.dates;
-    opt.yAxis.name = state.metric === "norm" ? "指数（起点=100）" : "亿份";
-    opt.yAxis.nameTextStyle = {color: isDark() ? "#93a0b8" : "#6b7488"};
+    opt.yAxis[0].name = state.metric === "norm" ? "指数" : "亿份";
     opt.series = [];
-    if (state.codes.length === funds.length) {
-      opt.series.push({
-        name: "4 只合计", type: "line", smooth: true, symbol: "none",
-        lineStyle: {width: 3, color: TOTAL_COLOR}, itemStyle: {color: TOTAL_COLOR},
-        data: s.idx.map(i => D.totals[i] == null ? null : +(D.totals[i] / 10000).toFixed(4))
-      });
+    if (state.codes.length > 1) {
+      const tot = s.idx.map(i => { const v = sumAt(i, state.codes); return v == null ? null : yi(v); });
+      opt.series.push({name: "所选合计", type: "line", smooth: true, symbol: "none",
+        lineStyle: {width: 3, color: TOTAL_COLOR}, itemStyle: {color: TOTAL_COLOR}, data: tot});
     }
-    for (const f of funds) {
-      if (!state.codes.includes(f.code)) continue;
-      let arr = seriesFor(f.code, s);
-      let name = f.code + " " + f.name;
-      if (state.metric === "norm") { arr = norm(arr); }
+    for (const c of state.codes) {
+      let arr = s.idx.map(i => { const v = at(c, i); return v == null ? null : +(yi(v)).toFixed(4); });
+      let name = c + " " + byCode[c].name;
+      if (state.metric === "norm") arr = norm(arr);
       else if (state.metric === "ma") { arr = ma(arr, 5); name += "（MA5）"; }
-      opt.series.push({
-        name, type: "line", smooth: true, symbol: "none", connectNulls: false,
-        lineStyle: {width: 2, color: f.color}, itemStyle: {color: f.color}, data: arr
-      });
+      opt.series.push({name, type: "line", smooth: true, symbol: "none", connectNulls: false,
+        lineStyle: {width: 2, color: byCode[c].color}, itemStyle: {color: byCode[c].color}, data: arr});
     }
     opt.tooltip.valueFormatter = v => v == null ? "-" : Number(v).toFixed(2);
     chart("chart-main").setOption(opt, true);
@@ -310,95 +384,170 @@
 
   function renderDelta() {
     const s = slice();
-    const opt = baseOption(isDark());
+    const opt = baseOption(false);
     opt.xAxis.data = s.dates;
-    opt.yAxis.name = "亿份";
-    opt.legend.top = 6;
+    opt.yAxis[0].name = "亿份";
     opt.series = [];
-    if (state.codes.length === funds.length) {
-      const t = s.idx.map(i => D.totals[i] == null ? null : +(D.totals[i] / 10000).toFixed(4));
-      opt.series.push({
-        name: "合计净变化", type: "bar", data: delta(t),
-        itemStyle: {color: p => p.value >= 0 ? "#d92b3a" : "#1a9d5c"}
-      });
+    if (state.codes.length > 1) {
+      const tot = s.idx.map(i => { const v = sumAt(i, state.codes); return v == null ? null : +(yi(v)).toFixed(4); });
+      opt.series.push({name: "合计净变化", type: "bar", data: delta(tot),
+        itemStyle: {color: p => p.value >= 0 ? "#d92b3a" : "#1a9d5c"}});
     } else {
-      for (const f of funds) {
-        if (!state.codes.includes(f.code)) continue;
-        opt.series.push({
-          name: f.code, type: "bar", stack: null,
-          data: delta(seriesFor(f.code, s)), itemStyle: {color: f.color}
-        });
+      for (const c of state.codes) {
+        const arr = s.idx.map(i => { const v = at(c, i); return v == null ? null : +(yi(v)).toFixed(4); });
+        opt.series.push({name: c + " " + byCode[c].name, type: "bar", data: delta(arr),
+          itemStyle: {color: byCode[c].color}});
       }
     }
     opt.tooltip.valueFormatter = v => v == null ? "-" : Number(v).toFixed(2);
     chart("chart-delta").setOption(opt, true);
   }
 
-  function renderStack() {
+  function renderFlow() {
     const s = slice();
-    const opt = baseOption(isDark());
+    const opt = baseOption(true);
     opt.xAxis.data = s.dates;
-    opt.yAxis.name = "亿份";
-    let total = null;
-    opt.series = funds.map(f => {
-      const arr = seriesFor(f.code, s);
-      return {
-        name: f.code + " " + f.name, type: "line", stack: "total", symbol: "none", smooth: true,
-        lineStyle: {width: 0, color: f.color}, areaStyle: {color: f.color, opacity: .75},
-        itemStyle: {color: f.color}, emphasis: {focus: "series"}, data: arr
-      };
-    });
+    opt.yAxis[0].name = "净流入(亿元)";
+    opt.yAxis[1].name = "成交额(亿元)";
+    opt.series = [
+      {name: "净流入金额", type: "bar", yAxisIndex: 0, data: sumFlow(s, state.codes),
+        itemStyle: {color: p => p.value >= 0 ? "#d92b3a" : "#1a9d5c"}},
+      {name: "成交额(右轴)", type: "line", yAxisIndex: 1, smooth: true, symbol: "none",
+        lineStyle: {width: 1.6, color: "#8e44ad"}, itemStyle: {color: "#8e44ad"},
+        data: sumAmount(s, state.codes)}
+    ];
     opt.tooltip.valueFormatter = v => v == null ? "-" : Number(v).toFixed(2);
-    chart("chart-stack").setOption(opt, true);
+    chart("chart-flow").setOption(opt, true);
+  }
+
+  function renderPremium() {
+    const s = slice();
+    const opt = baseOption(false);
+    opt.xAxis.data = s.dates;
+    opt.yAxis[0].name = "%";
+    opt.series = state.codes.map(c => ({
+      name: c + " " + byCode[c].name, type: "line", smooth: true, symbol: "none",
+      lineStyle: {width: 1.6, color: byCode[c].color}, itemStyle: {color: byCode[c].color},
+      data: premiumOf(c, s)
+    }));
+    opt.tooltip.valueFormatter = v => v == null ? "-" : Number(v).toFixed(3) + "%";
+    chart("chart-premium").setOption(opt, true);
+  }
+
+  function renderCompare() {
+    const s = slice();
+    const rows = funds.map(f => {
+      const first = s.idx.find(i => at(f.code, i) != null);
+      const lastI = s.idx.slice().reverse().find(i => at(f.code, i) != null);
+      let flow = null, pct = null;
+      if (first != null && lastI != null && first !== lastI) {
+        const dShare = at(f.code, lastI) - at(f.code, first);
+        const nav = navAt(f.code, lastI) || 1;
+        flow = +(dShare * nav / 10000).toFixed(2);
+        pct = +(dShare / at(f.code, first) * 100).toFixed(2);
+      }
+      return {name: f.code + " " + f.name, code: f.code, flow, pct, color: f.color};
+    }).filter(r => r.flow != null);
+    rows.sort((a, b) => state.cmp === "flow" ? a.flow - b.flow : a.pct - b.pct);
+    const opt = {
+      backgroundColor: "transparent",
+      textStyle: {color: isDark() ? "#e8ecf5" : "#1b2130"},
+      grid: {left: 8, right: 40, top: 16, bottom: 12, containLabel: true},
+      tooltip: {trigger: "axis", axisPointer: {type: "shadow"},
+        backgroundColor: isDark() ? "#1b2333" : "#fff",
+        textStyle: {color: isDark() ? "#e8ecf5" : "#1b2130"},
+        formatter: p => {
+          const r = rows[p[0].dataIndex];
+          return r.name + "<br/>净流入：" + fmt(r.flow) + " 亿元<br/>份额变化：" + sign(r.pct) + "%";
+        }},
+      xAxis: {type: "value", splitLine: {lineStyle: {color: isDark() ? "#222c42" : "#eef1f7"}},
+        axisLabel: {color: isDark() ? "#93a0b8" : "#6b7488"}},
+      yAxis: {type: "category", data: rows.map(r => r.code),
+        axisLabel: {color: isDark() ? "#93a0b8" : "#6b7488"},
+        axisLine: {lineStyle: {color: isDark() ? "#2c3853" : "#dfe3ee"}}},
+      series: [{
+        type: "bar", barMaxWidth: 18,
+        data: rows.map(r => ({value: state.cmp === "flow" ? r.flow : r.pct,
+          itemStyle: {color: r.color, opacity: state.codes.includes(r.code) ? 1 : .45}})),
+        label: {show: true, position: "right", fontSize: 11,
+          color: isDark() ? "#e8ecf5" : "#1b2130",
+          formatter: p => fmt(p.value, state.cmp === "flow" ? 1 : 1) + (state.cmp === "flow" ? "亿" : "%")}
+      }]
+    };
+    chart("chart-compare").setOption(opt, true);
   }
 
   function renderTable() {
     const n = state.rows || 20;
     const idx = dates.map((_, i) => i).reverse().slice(0, n > 0 ? n : undefined);
     let h = "<thead><tr><th>日期</th>";
-    for (const f of funds) h += `<th>${f.code}</th><th>日变化</th>`;
-    h += "<th>合计</th><th>合计日变化</th></tr></thead><tbody>";
+    for (const c of state.codes) h += `<th>${c} 份额</th><th>日变化</th><th>净流入(亿)</th>`;
+    h += "<th>合计份额</th><th>合计净流入(亿)</th><th>成交额(亿)</th></tr></thead><tbody>";
     for (const i of idx) {
       h += `<tr><td>${dates[i]}</td>`;
-      let sum = 0, ok = false;
-      for (const f of funds) {
-        const v = D.series[f.code][i];
+      let sum = 0, ok = false, sumFlowV = 0, okFlow = false;
+      for (const c of state.codes) {
+        const v = at(c, i);
         let prev = null;
-        for (let j = i - 1; j >= 0; j--) if (D.series[f.code][j] != null) { prev = D.series[f.code][j]; break; }
+        for (let j = i - 1; j >= 0; j--) if (at(c, j) != null) { prev = at(c, j); break; }
         const d = (v != null && prev != null) ? v - prev : null;
-        h += `<td>${fmt(yi(v))}</td><td class="${cls(d)}">${d == null ? "-" : sign(yi(d))}</td>`;
+        const nav = navAt(c, i);
+        const f = (d != null && nav) ? d * nav / 10000 : null;
+        h += `<td>${fmt(yi(v))}</td><td class="${cls(d)}">${d == null ? "-" : sign(yi(d))}</td>` +
+             `<td class="${cls(f)}">${f == null ? "-" : sign(f)}</td>`;
         if (v != null) { sum += v; ok = true; }
+        if (f != null) { sumFlowV += f; okFlow = true; }
       }
-      const t = D.totals[i];
-      let tp = null;
-      for (let j = i - 1; j >= 0; j--) if (D.totals[j] != null) { tp = D.totals[j]; break; }
-      const td = (t != null && tp != null) ? t - tp : null;
-      h += `<td><b>${ok ? fmt(yi(sum)) : "-"}</b></td><td class="${cls(td)}">${td == null ? "-" : sign(yi(td))}</td></tr>`;
+      let amt = 0, okAmt = false;
+      for (const c of state.codes) { const a = amtAt(c, i); if (a != null) { amt += a; okAmt = true; } }
+      h += `<td><b>${ok ? fmt(yi(sum)) : "-"}</b></td>` +
+           `<td class="${cls(okFlow ? sumFlowV : null)}">${okFlow ? sign(sumFlowV) : "-"}</td>` +
+           `<td>${okAmt ? fmt(amt, 1) : "-"}</td></tr>`;
     }
     el("table").innerHTML = h + "</tbody>";
   }
 
   function renderAll() {
-    renderCards(); renderMain(); renderDelta(); renderStack(); renderTable();
+    renderCards(); renderMain(); renderDelta(); renderFlow(); renderPremium(); renderCompare(); renderTable();
+  }
+  function renderCharts() {
+    renderMain(); renderDelta(); renderFlow(); renderPremium(); renderCompare();
   }
 
-  // 交互
   el("m-latest").textContent = D.meta.latestDate;
   el("m-count").textContent = D.meta.count;
   el("m-updated").textContent = D.meta.updatedAt;
 
   el("fund-chips").innerHTML = funds.map(f =>
-    `<button class="chip active" data-c="${f.code}" style="border-color:${f.color}">
-      <span class="dot" style="background:${f.color}"></span>${f.code}</button>`).join("");
+    `<button class="chip" data-c="${f.code}" style="border-color:${f.color}">
+      <span class="dot" style="background:${f.color}"></span>${f.code}</button>`).join("") +
+    `<button class="chip" data-c="__all__">全选</button>`;
 
+  function syncChips() {
+    document.querySelectorAll(".chip").forEach(b => {
+      const c = b.dataset.c;
+      b.classList.toggle("active", c === "__all__" ? false : state.codes.includes(c));
+    });
+  }
+
+  document.querySelectorAll(".grp").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".grp").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    state.codes = b.dataset.g === "all" ? funds.map(f => f.code) : G300.slice();
+    syncChips(); renderCards(); renderCharts(); renderTable();
+  }));
   document.querySelectorAll(".range").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".range").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
-    state.range = +b.dataset.n; renderMain(); renderDelta(); renderStack();
+    state.range = +b.dataset.n; renderCharts();
   }));
   document.querySelectorAll(".metric").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".metric").forEach(x => x.classList.remove("active"));
     b.classList.add("active"); state.metric = b.dataset.m; renderMain();
+  }));
+  document.querySelectorAll(".cmp").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".cmp").forEach(x => x.classList.remove("active"));
+    b.classList.add("active"); state.cmp = b.dataset.c; renderCompare();
   }));
   document.querySelectorAll(".rows").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".rows").forEach(x => x.classList.remove("active"));
@@ -406,39 +555,58 @@
   }));
   document.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => {
     const c = b.dataset.c;
-    const has = state.codes.includes(c);
-    if (has && state.codes.length === 1) return;
-    state.codes = has ? state.codes.filter(x => x !== c) : state.codes.concat(c);
-    b.classList.toggle("active");
-    renderMain(); renderDelta();
+    if (c === "__all__") { state.codes = funds.map(f => f.code); }
+    else {
+      if (state.codes.includes(c)) {
+        if (state.codes.length === 1) return;
+        state.codes = state.codes.filter(x => x !== c);
+      } else state.codes = state.codes.concat(c);
+    }
+    document.querySelectorAll(".grp").forEach(x => x.classList.remove("active"));
+    syncChips(); renderCards(); renderCharts(); renderTable();
   }));
   el("btn-theme").addEventListener("click", () => {
-    const dark = document.documentElement.getAttribute("data-theme") === "dark";
+    const dark = isDark();
     document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
     el("btn-theme").textContent = dark ? "深色模式" : "浅色模式";
     localStorage.setItem("etf-theme", dark ? "light" : "dark");
-    renderMain(); renderDelta(); renderStack();
+    renderAll();
   });
   el("btn-refresh").addEventListener("click", () => {
-    alert("更新数据：\n1. 双击运行 update.py 同级的「运行更新.bat」；\n" +
-          "2. 或命令行执行：python update.py\n" +
-          "3. 安装自动任务：双击「安装每日自动更新.bat」（每交易日 18:30 自动抓取）\n" +
-          "抓取完成后刷新本页即可看到最新数据。");
+    alert("更新数据：\n1. 双击「运行更新.bat」；\n2. 或命令行执行：python update.py\n" +
+          "3. 自动任务：双击「安装每日自动更新.bat」\n" +
+          "线上站点由 GitHub Actions 每日 08:30 / 19:00 自动更新。\n抓取后刷新本页即可。");
   });
   el("btn-csv").addEventListener("click", e => {
     e.preventDefault();
-    const head = ["日期"].concat(funds.map(f => f.code + "份额(亿份)"), ["合计(亿份)"]);
+    const head = ["日期"].concat(
+      state.codes.map(c => c + "份额(亿份)"),
+      state.codes.map(c => c + "净流入(亿元)"),
+      ["合计份额(亿份)", "合计净流入(亿元)", "成交额(亿元)"]);
     const lines = [head.join(",")];
     dates.forEach((d, i) => {
       const row = [d];
-      for (const f of funds) row.push(D.series[f.code][i] == null ? "" : fmt(yi(D.series[f.code][i]), 4));
-      row.push(D.totals[i] == null ? "" : fmt(yi(D.totals[i]), 4));
+      let sum = 0, ok = false, sf = 0, okf = false;
+      for (const c of state.codes) {
+        const v = at(c, i);
+        let prev = null;
+        for (let j = i - 1; j >= 0; j--) if (at(c, j) != null) { prev = at(c, j); break; }
+        const dd = (v != null && prev != null) ? v - prev : null;
+        const nav = navAt(c, i);
+        const f = (dd != null && nav) ? dd * nav / 10000 : null;
+        row.push(v == null ? "" : fmt(yi(v), 4), f == null ? "" : fmt(f, 4));
+        if (v != null) { sum += v; ok = true; }
+        if (f != null) { sf += f; okf = true; }
+      }
+      let amt = 0, okA = false;
+      for (const c of state.codes) { const a = amtAt(c, i); if (a != null) { amt += a; okA = true; } }
+      row.push(ok ? fmt(yi(sum), 4) : "", okf ? fmt(sf, 4) : "", okA ? fmt(amt, 2) : "");
       lines.push(row.join(","));
     });
     const blob = new Blob(["\ufeff" + lines.join("\n")], {type: "text/csv;charset=utf-8"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "沪深300ETF份额_" + D.meta.latestDate + ".csv";
+    a.download = "ETF份额与资金_" + D.meta.latestDate + ".csv";
     a.click();
   });
 
@@ -449,6 +617,7 @@
   }
   document.querySelectorAll('.range').forEach(b => b.classList.toggle("active", +b.dataset.n === state.range));
   window.addEventListener("resize", () => Object.values(charts).forEach(c => c.resize()));
+  syncChips();
   renderAll();
 })();
 </script>
