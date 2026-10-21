@@ -58,8 +58,12 @@ jobs:
         continue-on-error: true
         run: python sector.py
 
-      # 注意：数据加密只在本地做（python build_single.py）。
-      # 云端不重新加密，否则会用 Secret 里的账号表覆盖本地账号，导致新账号丢失。
+      # 用 Secret ETF_USERS 里的账号表重新加密数据。
+      # 注意：Secret 内容必须与本地 data/users.txt 一致，否则新账号会被覆盖。
+      - name: 加密打包数据
+        env:
+          ETF_USERS: ${{ secrets.ETF_USERS }}
+        run: node protect.js
       # 只在盘后那次（UTC 11:00 = 北京 19:00）与手动触发时推送，避免一天两条
       - name: 微信推送每日速报
         if: github.event_name != 'schedule' || github.event.schedule == '0 11 * * 1-5'
