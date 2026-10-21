@@ -64,6 +64,8 @@
   th:first-child,td:first-child{text-align:left}
   th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card)}
   .scroll{max-height:420px;overflow:auto;border-radius:10px}
+  /* 板块榜：横向可滚，纵向不限高，选“全部”时完整展开 */
+  .scrollx{overflow-x:auto;border-radius:10px}
   .empty{padding:60px 0;text-align:center;color:var(--muted)}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:26px;line-height:1.8}
   @media(max-width:640px){
@@ -234,7 +236,8 @@
         <button class="secn" data-n="0">全部</button>
       </div>
     </div>
-    <div class="scroll"><table id="sec-table"></table></div>
+    <div class="subhead" id="sec-count"></div>
+    <div class="scrollx"><table id="sec-table"></table></div>
   </section>
 
   <section class="panel" id="sec-detail" hidden>
@@ -875,6 +878,8 @@
         `<td>${pctText(r.pePct)}</td><td>${pctText(r.pbPct)}</td><td>${r.eva}</td></tr>`;
     }
     el("sec-table").innerHTML = h + "</tbody>";
+    el("sec-count").textContent = "共 " + rows.length + " 个板块"
+      + (rows.length < SECT.list.length ? "（当前范围；全部 " + SECT.list.length + " 个，可切“全市场”）" : "");
     document.querySelectorAll("#sec-table tbody tr").forEach(tr => tr.addEventListener("click", () => {
       sec.code = tr.dataset.c; renderSecTable(); renderSecDetail();
     }));
