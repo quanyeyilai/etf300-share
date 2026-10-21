@@ -46,6 +46,10 @@
   .ctrl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
   .ctrl .group{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .ctrl .tag{font-size:12px;color:var(--muted);margin-right:2px}
+  /* 各指标独立的区间按钮组：单行横向滚动，不换行 */
+  .ranges{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .ranges::-webkit-scrollbar{height:0}
+  .ranges .tag,.ranges button{flex:0 0 auto}
   .chart{width:100%;height:420px}
   .chart.sm{height:330px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
@@ -125,7 +129,9 @@
     </div>
   </header>
 
+  <div class="ctrl"><div class="group ranges" data-p="cards"></div></div>
   <div id="cards" class="cards"></div>
+  <div class="ctrl"><div class="group ranges" data-p="macro"></div></div>
   <div id="macro-cards" class="cards"></div>
 
   <section class="panel">
@@ -135,14 +141,7 @@
         <button class="grp active" data-g="300">沪深300系</button>
         <button class="grp" data-g="all">全部宽基</button>
       </div>
-      <div class="group"><span class="tag">区间</span>
-        <button class="range" data-n="20">1个月</button>
-        <button class="range" data-n="60">3个月</button>
-        <button class="range" data-n="120">6个月</button>
-        <button class="range" data-n="250">1年</button>
-        <button class="range" data-n="750">3年</button>
-        <button class="range" data-n="0">全部</button>
-      </div>
+      <div class="group ranges" data-p="main"></div>
       <div class="group"><span class="tag">指标</span>
         <button class="metric active" data-m="share">份额（亿份）</button>
         <button class="metric" data-m="norm">归一化（起点=100）</button>
@@ -156,10 +155,12 @@
   <div class="grid2">
     <section class="panel">
       <h2>每日份额净变化 <span>亿份，申购为正</span></h2>
+      <div class="ctrl"><div class="group ranges" data-p="delta"></div></div>
       <div id="chart-delta" class="chart sm"></div>
     </section>
     <section class="panel">
       <h2>净流入金额与成交额 <span>净流入 = 份额变化 × 单位净值</span></h2>
+      <div class="ctrl"><div class="group ranges" data-p="flow"></div></div>
       <div id="chart-flow" class="chart sm"></div>
     </section>
   </div>
@@ -167,6 +168,7 @@
   <div class="grid2">
     <section class="panel">
       <h2>折溢价率 <span>（收盘价 / 单位净值 − 1），大额买盘常推升溢价</span></h2>
+      <div class="ctrl"><div class="group ranges" data-p="premium"></div></div>
       <div id="chart-premium" class="chart sm"></div>
     </section>
     <section class="panel">
@@ -176,6 +178,7 @@
           <button class="cmp active" data-c="flow">净流入金额（亿元）</button>
           <button class="cmp" data-c="pct">份额变化（%）</button>
         </div>
+        <div class="group ranges" data-p="compare"></div>
       </div>
       <div id="chart-compare" class="chart sm"></div>
     </section>
@@ -184,22 +187,26 @@
   <div class="grid2">
     <section class="panel">
       <h2>杠杆资金 <span>两融余额与占流通市值比</span></h2>
+      <div class="ctrl"><div class="group ranges" data-p="margin"></div></div>
       <div id="chart-margin" class="chart sm"></div>
     </section>
     <section class="panel">
       <h2>股债性价比 <span>沪深300股息率 vs 10年国债，利差越高股票相对越便宜</span></h2>
+      <div class="ctrl"><div class="group ranges" data-p="div"></div></div>
       <div id="chart-div" class="chart sm"></div>
     </section>
   </div>
 
   <section class="panel">
     <h2>市场情绪 <span>两融占比分位45% + 估值分位35% + 波动率分位20%；A股开户数暂无公开日频接口</span></h2>
+    <div class="ctrl"><div class="group ranges" data-p="emotion"></div></div>
     <div id="chart-emotion" class="chart"></div>
   </section>
 
   <section class="panel">
     <h2>明细数据 <span>最近交易日在上，跟随上方区间与基金选择</span></h2>
     <div class="ctrl">
+      <div class="group ranges" data-p="table"></div>
       <div class="group"><span class="tag">显示行数</span>
         <button class="rows active" data-n="20">20</button>
         <button class="rows" data-n="60">60</button>
@@ -235,7 +242,12 @@
   const dates = D.dates;
   const G300 = funds.filter(f => f.group === "300").map(f => f.code);
 
-  const state = {range: 120, metric: "share", codes: G300.slice(), cmp: "flow", rows: 20};
+  // 每个指标（面板）各自独立的区间，互不影响
+  const DEF_RANGE = 120;
+  const state = {metric: "share", codes: G300.slice(), cmp: "flow", rows: 20,
+    ranges: {cards: DEF_RANGE, macro: DEF_RANGE, main: DEF_RANGE, delta: DEF_RANGE,
+             flow: DEF_RANGE, premium: DEF_RANGE, compare: DEF_RANGE, margin: DEF_RANGE,
+             div: DEF_RANGE, emotion: DEF_RANGE, table: DEF_RANGE}};
 
   const el = id => document.getElementById(id);
   const fmt = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? "-" : Number(v).toFixed(d);
@@ -296,10 +308,12 @@
   }
 
   const RANGE_NAME = {20: "1个月", 60: "3个月", 120: "6个月", 250: "1年", 750: "3年", 0: "全部"};
-  const rangeName = () => RANGE_NAME[state.range] || (state.range + " 日");
+  const RANGE_OPTS = [[20, "1个月"], [60, "3个月"], [120, "6个月"], [250, "1年"], [750, "3年"], [0, "全部"]];
+  const rangeName = key => RANGE_NAME[state.ranges[key]] || (state.ranges[key] + " 日");
 
-  function slice() {
-    const n = state.range > 0 ? Math.min(state.range, dates.length) : dates.length;
+  function slice(key) {
+    const n0 = (key && state.ranges[key] != null) ? state.ranges[key] : DEF_RANGE;
+    const n = n0 > 0 ? Math.min(n0, dates.length) : dates.length;
     const start = dates.length - n;
     return {start, dates: dates.slice(start), idx: dates.slice(start).map((_, i) => start + i)};
   }
@@ -390,7 +404,7 @@
   function renderCards() {
     const last = dates.length - 1;
     const codes = state.codes;
-    const s = slice();
+    const s = slice("cards");
     const build = (code) => {
       const isTotal = code === "__total__";
       const v = isTotal ? sumAt(last, codes) : at(code, last);
@@ -431,7 +445,7 @@
         code, name: isTotal ? (codes.length + " 只合计") : (code + " " + byCode[code].name),
         color: isTotal ? TOTAL_COLOR : byCode[code].color,
         value: yi(v), d1: yi(d1), pct: (d1 != null && v != null && (v - d1)) ? d1 / (v - d1) * 100 : null,
-        flow, dr: yi(rng), drPct: rngPct, rflow: rngFlow, rname: rangeName()
+        flow, dr: yi(rng), drPct: rngPct, rflow: rngFlow, rname: rangeName("cards")
       };
     };
     let html = "";
@@ -451,7 +465,7 @@
   }
 
   function renderMain() {
-    const s = slice();
+    const s = slice("main");
     const opt = baseOption(false);
     opt.xAxis.data = s.dates;
     opt.yAxis[0].name = isMobile ? "" : (state.metric === "norm" ? "指数" : "亿份");
@@ -474,7 +488,7 @@
   }
 
   function renderDelta() {
-    const s = slice();
+    const s = slice("delta");
     const opt = baseOption(false);
     opt.xAxis.data = s.dates;
     opt.yAxis[0].name = isMobile ? "" : "亿份";
@@ -495,7 +509,7 @@
   }
 
   function renderFlow() {
-    const s = slice();
+    const s = slice("flow");
     const opt = baseOption(true);
     opt.xAxis.data = s.dates;
     opt.yAxis[0].name = isMobile ? "" : "净流入(亿元)";
@@ -512,7 +526,7 @@
   }
 
   function renderPremium() {
-    const s = slice();
+    const s = slice("premium");
     const opt = baseOption(false);
     opt.xAxis.data = s.dates;
     opt.yAxis[0].name = isMobile ? "" : "%";
@@ -533,7 +547,7 @@
   }
 
   function renderCompare() {
-    const s = slice();
+    const s = slice("compare");
     const rows = funds.map(f => {
       const first = s.idx.find(i => at(f.code, i) != null);
       const lastI = s.idx.slice().reverse().find(i => at(f.code, i) != null);
@@ -613,13 +627,13 @@
     const dEm = (em && em20) ? em.v - em20.v : null;
 
     // 区间统计：所选区间首末值之差
-    const s = slice();
+    const s = slice("macro");
     const rangeDelta = arr => {
       let a = null, b = null;
       for (const i of s.idx) { const v = arr[i]; if (v != null) { if (a === null) a = v; b = v; } }
       return (a !== null && b !== null && a !== b) ? b - a : null;
     };
-    const rn = rangeName();
+    const rn = rangeName("macro");
     const rBal = rangeDelta(M.margin.balance);
     const rY10 = rangeDelta(M.bond.y10);
     const rDiv = rangeDelta(M.div.yield);
@@ -655,7 +669,7 @@
 
   function renderMargin() {
     if (!hasMacro) return;
-    const s = slice();
+    const s = slice("margin");
     const opt = baseOption(true);
     opt.xAxis.data = s.dates;
     opt.yAxis[0].name = isMobile ? "" : "两融余额(亿元)";
@@ -674,7 +688,7 @@
 
   function renderDiv() {
     if (!hasMacro) return;
-    const s = slice();
+    const s = slice("div");
     const opt = baseOption(false);
     opt.xAxis.data = s.dates;
     opt.yAxis[0].name = isMobile ? "" : "%";
@@ -695,7 +709,7 @@
 
   function renderEmotion() {
     if (!hasMacro) return;
-    const s = slice();
+    const s = slice("emotion");
     const opt = baseOption(true);
     opt.xAxis.data = s.dates;
     opt.yAxis[0].name = isMobile ? "" : "情绪温度";
@@ -723,7 +737,7 @@
 
   function renderTable() {
     const n = (state.rows === undefined || state.rows === null) ? 20 : state.rows;   // 0 = 全部
-    const s = slice();
+    const s = slice("table");
     let idx = s.idx.slice().reverse();
     if (n > 0) idx = idx.slice(0, n);
     let h = "<thead><tr><th>日期</th>";
@@ -784,11 +798,33 @@
     state.codes = b.dataset.g === "all" ? funds.map(f => f.code) : G300.slice();
     syncChips(); renderCards(); renderCharts(); renderTable();
   }));
-  document.querySelectorAll(".range").forEach(b => b.addEventListener("click", () => {
-    document.querySelectorAll(".range").forEach(x => x.classList.remove("active"));
-    b.classList.add("active");
-    state.range = +b.dataset.n; renderAll();
-  }));
+  // 每个指标一组独立区间按钮，只重绘对应指标
+  const RENDER = {
+    cards: () => renderCards(), macro: () => renderMacroCards(),
+    main: () => renderMain(), delta: () => renderDelta(), flow: () => renderFlow(),
+    premium: () => renderPremium(), compare: () => renderCompare(),
+    margin: () => renderMargin(), div: () => renderDiv(), emotion: () => renderEmotion(),
+    table: () => renderTable()
+  };
+  function syncRanges() {
+    document.querySelectorAll(".range").forEach(b => {
+      b.classList.toggle("active", state.ranges[b.dataset.p] === +b.dataset.n);
+    });
+  }
+  function mountRanges() {
+    document.querySelectorAll(".ranges").forEach(box => {
+      const key = box.dataset.p;
+      box.innerHTML = '<span class="tag">区间</span>' + RANGE_OPTS.map(
+        o => `<button class="range" data-p="${key}" data-n="${o[0]}">${o[1]}</button>`).join("");
+    });
+    document.querySelectorAll(".range").forEach(b => b.addEventListener("click", () => {
+      const key = b.dataset.p;
+      state.ranges[key] = +b.dataset.n;
+      syncRanges();
+      (RENDER[key] || (() => {}))();
+    }));
+    syncRanges();
+  }
   document.querySelectorAll(".metric").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".metric").forEach(x => x.classList.remove("active"));
     b.classList.add("active"); state.metric = b.dataset.m; renderMain();
@@ -832,7 +868,7 @@
       state.codes.map(c => c + "净流入(亿元)"),
       ["合计份额(亿份)", "合计净流入(亿元)", "成交额(亿元)"]);
     const lines = [head.join(",")];
-    const sCsv = slice();
+    const sCsv = slice("table");
     sCsv.dates.forEach((d, k) => {
       const i = sCsv.idx[k];
       const row = [d];
@@ -856,7 +892,7 @@
     const blob = new Blob(["\ufeff" + lines.join("\n")], {type: "text/csv;charset=utf-8"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "ETF份额与资金_" + rangeName() + "_" + D.meta.latestDate + ".csv";
+    a.download = "ETF份额与资金_" + rangeName("table") + "_" + D.meta.latestDate + ".csv";
     a.click();
   });
 
@@ -865,13 +901,13 @@
     document.documentElement.setAttribute("data-theme", "dark");
     el("btn-theme").textContent = "浅色模式";
   }
-  document.querySelectorAll('.range').forEach(b => b.classList.toggle("active", +b.dataset.n === state.range));
   window.addEventListener("resize", () => {
     Object.values(charts).forEach(c => c.resize());
     const m = mq.matches;
     if (m !== isMobile) { isMobile = m; renderAll(); }
   });
   if (mq.addEventListener) mq.addEventListener("change", e => { isMobile = e.matches; renderAll(); });
+  mountRanges();
   syncChips();
   renderAll();
 
