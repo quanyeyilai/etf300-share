@@ -31,6 +31,16 @@ jobs:
         with:
           python-version: '3.11'
 
+      # 原始抓取存档不入库（避免明文数据出现在仓库里），云端用缓存做增量
+      - name: 恢复抓取存档
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/etf_shares.csv
+            data/macro.csv
+            data/etf_market.csv
+          key: etf-archive-v1
+
       - name: 抓取最新份额数据
         run: |
           ARGS=""
@@ -69,7 +79,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/etf_shares.csv data/macro.csv data/notify_last.json docs/data/notify_last.json docs/data/bundle.js
+          git add -A
           if git diff --staged --quiet; then
             echo "数据无变化，跳过提交"
           else
