@@ -11,6 +11,7 @@ import argparse
 import csv
 import datetime as dt
 import json
+import math
 import os
 import sys
 import time
@@ -18,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fetcher  # noqa: E402
+import macro  # noqa: E402
 import market  # noqa: E402
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,6 +27,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 WEB_DATA = os.path.join(BASE_DIR, "docs", "data")
 CSV_PATH = os.path.join(DATA_DIR, "etf_shares.csv")
 MARKET_CSV = os.path.join(DATA_DIR, "etf_market.csv")
+MACRO_CSV = os.path.join(DATA_DIR, "macro.csv")
 
 # 关注的基金：代码 -> (交易所, 展示名, 分组)
 # 分组 300 = 沪深300 系；broad = 其他宽基（用于横向对比资金扩散）
@@ -124,6 +127,146 @@ def fetch_market_all():
             }
         log("  行情 %s：日线 %d 条，净值 %d 条" % (code, len(kline), len(nav)))
     return rows
+
+
+def load_macro():
+    rows = {}
+    if os.path.exists(MACRO_CSV):
+        with open(MACRO_CSV, "r", encoding="utf-8-sig", newline="") as f:
+            for r in csv.DictReader(f):
+                try:
+                    rows[r["date"]] = {
+                        "date": r["date"],
+                        "balance": float(r["balance"]) if r.get("balance") else None,
+                        "ratio": float(r["ratio"]) if r.get("ratio") else None,
+                        "fin": float(r["fin"]) if r.get("fin") else None,
+                        "y10": float(r["y10"]) if r.get("y10") else None,
+                        "y2": float(r["y2"]) if r.get("y2") else None,
+                        "div": float(r["div"]) if r.get("div") else None,
+                    }
+                except (KeyError, ValueError):
+                    continue
+    return rows
+
+
+def save_macro(rows):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(MACRO_CSV, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "balance", "ratio", "fin", "y10", "y2", "div"])
+        for d in sorted(rows):
+            r = rows[d]
+            fmt = lambda v, n=4: "" if v is None else ("%." + str(n) + "f") % v
+            w.writerow([d, fmt(r["balance"]), fmt(r["ratio"]), fmt(r["fin"]),
+                        fmt(r["y10"], 4), fmt(r["y2"], 4), fmt(r["div"], 4)])
+    return rows
+
+
+def fetch_macro_all():
+    """抓取两融、国债、沪深300 股息率，合并为按日期的字典。"""
+    rows = {}
+    try:
+        for d, v in macro.fetch_margin().items():
+            rows.setdefault(d, {})["balance"] = v["balance"]
+            rows[d]["ratio"] = v["ratio"]
+            rows[d]["fin"] = v["fin"]
+    except Exception as exc:
+        log("  两融抓取失败：%s" % exc)
+    try:
+        for d, v in macro.fetch_bond().items():
+            rows.setdefault(d, {})["y10"] = v["y10"]
+            rows[d]["y2"] = v["y2"]
+    except Exception as exc:
+        log("  国债收益率抓取失败：%s" % exc)
+    div_current, div_hist = None, {}
+    try:
+        div_current, div_hist = macro.fetch_index_dividend()
+        for d, v in div_hist.items():
+            rows.setdefault(d, {})["div"] = v
+    except Exception as exc:
+        log("  沪深300 股息率抓取失败：%s" % exc)
+    # 股息率为周频，对缺失日期做前向填充
+    last = None
+    for d in sorted(rows):
+        r = rows[d]
+        if r.get("div"):
+            last = r["div"]
+        elif last:
+            r["div"] = last
+    out = {}
+    for d, r in rows.items():
+        out[d] = {"date": d, "balance": r.get("balance"), "ratio": r.get("ratio"),
+                  "fin": r.get("fin"), "y10": r.get("y10"), "y2": r.get("y2"),
+                  "div": r.get("div")}
+    return out, div_current
+
+
+def pct_rank(series, i, win=250):
+    cur = series[i]
+    if cur is None:
+        return None
+    vals = [v for v in series[max(0, i - win + 1):i + 1] if v is not None]
+    if len(vals) < 30:
+        return None
+    return sum(1 for v in vals if v <= cur) / float(len(vals))
+
+
+def build_macro_payload(dates, macro_rows, mrows, div_current):
+    """把宏观数据对齐到交易日，并合成情绪温度。"""
+    margin, ratio, fin, y10, y2, div = [], [], [], [], [], []
+    for d in dates:
+        r = macro_rows.get(d) or {}
+        margin.append(r.get("balance"))
+        ratio.append(r.get("ratio"))
+        fin.append(r.get("fin"))
+        y10.append(r.get("y10"))
+        y2.append(r.get("y2"))
+        div.append(r.get("div"))
+
+    # 沪深300 20 日年化波动率（用 510300 收盘价）
+    closes = [mrows.get((d, "510300"), {}).get("close") for d in dates]
+    vol, rets = [], []
+    for i, c in enumerate(closes):
+        pc = closes[i - 1] if i > 0 else None
+        rets.append((math.log(c / pc) if (c and pc and c > 0 and pc > 0) else None))
+    for i in range(len(rets)):
+        win = [r for r in rets[max(0, i - 19):i + 1] if r is not None]
+        if len(win) < 15:
+            vol.append(None)
+        else:
+            mean = sum(win) / len(win)
+            var = sum((x - mean) ** 2 for x in win) / (len(win) - 1)
+            vol.append(round(math.sqrt(var) * math.sqrt(252) * 100, 2))
+
+    spread = [round(a - b, 4) if (a is not None and b is not None) else None for a, b in zip(y10, y2)]
+    div_spread = [round(a - b, 4) if (a is not None and b is not None) else None for a, b in zip(div, y10)]
+
+    emotion = []
+    for i in range(len(dates)):
+        lev = pct_rank(ratio, i)
+        val = pct_rank(div, i)
+        vl = pct_rank(vol, i)
+        if lev is None or val is None or vl is None:
+            emotion.append(None)
+            continue
+        score = 100 * (0.45 * lev + 0.35 * (1 - val) + 0.20 * vl)
+        emotion.append(round(score, 1))
+
+    payload = {
+        "meta": {"updatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                 "latest": dates[-1] if dates else "",
+                 "divCurrent": div_current,
+                 "note": "股息率为按 PE 反推的近似值；情绪温度=两融占比分位45%+估值分位35%+波动率分位20%"},
+        "dates": dates,
+        "margin": {"balance": margin, "ratio": ratio, "fin": fin},
+        "bond": {"y10": y10, "y2": y2, "spread": spread},
+        "div": {"yield": div, "spread": div_spread},
+        "vol": vol,
+        "emotion": emotion,
+    }
+    with open(os.path.join(WEB_DATA, "macro.js"), "w", encoding="utf-8") as f:
+        f.write("window.ETF_MACRO = " + json.dumps(payload, ensure_ascii=False) + ";\n")
+    return payload
 
 
 def workdays(start, end):
@@ -249,6 +392,7 @@ def main():
     ap.add_argument("--rebuild", action="store_true", help="清空已有数据重新抓取")
     ap.add_argument("--only", choices=["sse", "szse"], help="只抓取指定交易所")
     ap.add_argument("--no-market", action="store_true", help="跳过行情与净值抓取")
+    ap.add_argument("--no-macro", action="store_true", help="跳过两融/国债/股息率抓取")
     args = ap.parse_args()
 
     rows = {} if args.rebuild else load_rows()
@@ -293,6 +437,25 @@ def main():
     payload = build_web_data(data, mrows)
     log("最新数据日期：%s（共 %d 个交易日，份额 %d 条 / 行情 %d 条）"
         % (payload["meta"]["latestDate"], payload["meta"]["count"], len(data), len(mrows)))
+
+    # 宏观与资金面
+    macro_current = None
+    if args.no_macro:
+        mrows_macro = load_macro()
+    else:
+        log("抓取宏观指标（两融 / 国债 / 沪深300 股息率）")
+        fresh, macro_current = fetch_macro_all()
+        mrows_macro = load_macro()
+        mrows_macro.update(fresh)
+        save_macro(mrows_macro)
+        log("宏观记录累计 %d 条" % len(mrows_macro))
+    mp = build_macro_payload(payload["dates"], mrows_macro, mrows, macro_current)
+    last_emotion = next((v for v in reversed(mp["emotion"]) if v is not None), None)
+    last_margin = next((v for v in reversed(mp["margin"]["balance"]) if v is not None), None)
+    last_y10 = next((v for v in reversed(mp["bond"]["y10"]) if v is not None), None)
+    log("宏观：两融 %.0f 亿 / 10Y 国债 %s%% / 情绪温度 %s"
+        % (last_margin or 0, last_y10, last_emotion))
+    log("完成宏观：%s" % os.path.join(WEB_DATA, "macro.js"))
     log("完成：%s" % os.path.join(WEB_DATA, "data.js"))
 
 
