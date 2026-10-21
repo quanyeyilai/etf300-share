@@ -18,6 +18,7 @@ python notify.py --n 5      Top N 板块（默认 10）
 """
 
 import datetime as dt
+import hashlib
 import json
 import os
 import sys
@@ -28,6 +29,8 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 SECTOR = os.path.join(BASE, "docs", "data", "sector.js")
 MACRO = os.path.join(BASE, "docs", "data", "macro.js")
 LAST = os.path.join(BASE, "data", "notify_last.json")
+# 上一日榜单代码：仅本地保存（不入库），云端靠 Actions 缓存
+CODES = os.path.join(BASE, "data", "notify_codes.txt")
 SITE = "https://quanyeyilai.github.io/etf300-share/"
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
@@ -117,13 +120,20 @@ def build_content(top_n=10):
     now_codes = [r["code"] for r in rows]
     names = {r["code"]: r["name"] for r in sec["list"]}
     changes = ""
-    old = {}
-    if os.path.exists(LAST):
+    old_codes = []
+    if os.path.exists(CODES):
         try:
-            old = json.load(open(LAST, encoding="utf-8"))
+            old_codes = [x.strip() for x in open(CODES, encoding="utf-8").read().splitlines() if x.strip()]
         except Exception:
-            old = {}
-    old_codes = old.get("codes") or []
+            old_codes = []
+    else:
+        old = {}
+        if os.path.exists(LAST):
+            try:
+                old = json.load(open(LAST, encoding="utf-8"))
+            except Exception:
+                old = {}
+        old_codes = old.get("codes") or []
     if old_codes:
         new_in = [c for c in now_codes if c not in old_codes]
         out = [c for c in old_codes if c not in now_codes]
@@ -141,22 +151,38 @@ def build_content(top_n=10):
     content = "\n".join(lines)
 
     rec = {"codes": now_codes, "date": date, "fng": fv, "emotion": ev}
-    json.dump(rec, open(LAST, "w", encoding="utf-8"), ensure_ascii=False)
-    # 同时写一份到网页目录：本地定时任务据此判断是否已由云端推送过
+    fp = fingerprint(rec)
+    # 入库的标记里只保留日期与指纹，不含榜单代码和指标
+    json.dump({"date": date, "hash": fp}, open(LAST, "w", encoding="utf-8"), ensure_ascii=False)
     try:
-        json.dump(rec, open(os.path.join(BASE, "docs", "data", "notify_last.json"),
-                            "w", encoding="utf-8"), ensure_ascii=False)
+        open(CODES, "w", encoding="utf-8").write("\n".join(now_codes))
     except Exception:
         pass
-    return content, date, len(rows)
+    # 网页上只放「日期 + 指纹」，不含榜单代码与任何指标
+    try:
+        json.dump({"date": date, "hash": fp},
+                  open(os.path.join(BASE, "docs", "data", "notify_last.json"),
+                       "w", encoding="utf-8"), ensure_ascii=False)
+    except Exception:
+        pass
+    return content, date, len(rows), fp
 
 
-def pushed_online(date):
+def fingerprint(rec):
+    """当日内容指纹，仅用于本地/云端去重，不泄露榜单与指标。"""
+    raw = json.dumps({"c": rec.get("codes"), "f": rec.get("fng"), "e": rec.get("emotion")},
+                     ensure_ascii=False, sort_keys=True)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
+
+
+def pushed_online(date, fp=None):
     """网页上是否已记录今天的推送（云端推送过的标志）。"""
     try:
         req = urllib.request.Request(SITE + "data/notify_last.json", headers={"User-Agent": UA})
         j = json.loads(urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "ignore"))
-        return j.get("date") == date
+        if j.get("date") != date:
+            return False
+        return (not fp) or (not j.get("hash")) or (j.get("hash") == fp)
     except Exception:
         return False
 
@@ -229,11 +255,11 @@ def main():
             pass
 
     force = "--force" in sys.argv
-    content, date, rows = build_content(n)
+    content, date, rows, fp = build_content(n)
     title = "%s 板块估值榜 Top%d" % (date, rows)
 
     # 云端（GitHub Actions）已经推过当天的内容时，本地不再重复推
-    if not force and not dry and pushed_online(date):
+    if not force and not dry and pushed_online(date, fp):
         log("云端今日（%s）已推送，跳过本地重复推送" % date)
         return 0
 

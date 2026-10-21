@@ -13,6 +13,7 @@ docs/data/data.json
 data/etf_market.csv
 data/etf_shares.csv
 data/macro.csv
+data/notify_codes.txt
 data/*.log
 data/*.err
 data/init*.log

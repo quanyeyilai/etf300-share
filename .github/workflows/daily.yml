@@ -39,6 +39,7 @@ jobs:
             data/etf_shares.csv
             data/macro.csv
             data/etf_market.csv
+            data/notify_codes.txt
           key: etf-archive-v1
 
       - name: 抓取最新份额数据
