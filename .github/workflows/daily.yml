@@ -40,11 +40,16 @@ jobs:
             data/macro.csv
             data/etf_market.csv
             data/notify_codes.txt
-          key: etf-archive-v1
+          key: etf-archive-v2
 
       - name: 抓取最新份额数据
         run: |
           ARGS=""
+          # 云端没有历史存档（缓存未命中）时抓全量，否则只会增量出最近几百天
+          if [ ! -f data/etf_shares.csv ]; then
+            echo "无历史存档，抓取全部历史"
+            ARGS="--days 1800"
+          fi
           if [ -n "${{ github.event.inputs.days }}" ] && [ "${{ github.event.inputs.days }}" != "0" ]; then
             ARGS="$ARGS --days ${{ github.event.inputs.days }}"
           fi

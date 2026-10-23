@@ -45,9 +45,9 @@
   .ctrl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
   .ctrl .group{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .ctrl .tag{font-size:12px;color:var(--muted);margin-right:2px}
-  /* 各指标独立的区间按钮组：单行横向滚动，不换行 */
-  .ranges{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-  .ranges::-webkit-scrollbar{height:0}
+  /* 各指标独立的区间按钮组：允许换行，保证手机上每个档位都看得见 */
+  .ranges{flex-wrap:wrap}
+  @media(max-width:640px){.ranges{gap:6px}.ranges .tag{width:100%}}
   .ranges .tag,.ranges button{flex:0 0 auto}
   .subhead{font-size:12px;color:var(--muted);margin:10px 0 2px}
   .mini{display:block;font-size:10px;color:var(--muted);font-weight:400}
